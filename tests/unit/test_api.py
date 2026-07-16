@@ -78,6 +78,18 @@ def test_api_returns_standard_validation_errors():
     assert response.json()["details"]
 
 
+def test_api_allows_local_web_client_cors_preflight():
+    response = client.options(
+        "/api/v1/backtests/example",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
 def test_backtest_result_returns_not_found_error():
     response = client.get("/api/v1/backtests/does-not-exist")
     assert response.status_code == 404
