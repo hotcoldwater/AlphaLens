@@ -1,4 +1,4 @@
-import type { BacktestResult, OHLCVBar, Strategy, StrategyDraft } from "./types";
+import type { BacktestExplanation, BacktestResult, OHLCVBar, Strategy, StrategyDraft } from "./types";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -46,4 +46,8 @@ export function runDraftBacktest(draftId: string, data: OHLCVBar[]): Promise<Bac
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data }),
   });
+}
+
+export function explainBacktest(backtestId: string): Promise<BacktestExplanation> {
+  return request(`/api/v1/backtests/${encodeURIComponent(backtestId)}/explanation`, { method: "POST" });
 }

@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 
 from services.api.app.main import app
-from services.api.app.api import strategy_draft_routes
+from services.api.app.api import backtest_routes, strategy_draft_routes
+from services.api.app.schemas.backtest_explanation_schema import BacktestExplanation
 from services.api.app.schemas.strategy_parse_schema import StrategyParseResult
 from tests.unit.test_strategy_schema import valid_strategy
 
@@ -117,6 +118,21 @@ def test_backtest_result_returns_not_found_error():
         "message": "backtest not found",
         "details": [],
     }
+
+
+def test_backtest_explanation_uses_saved_result(monkeypatch):
+    created = client.post("/api/v1/backtests", json={"strategy": api_strategy(), "data": bars()})
+    backtest_id = created.json()["backtest_id"]
+    expected = BacktestExplanation(
+        summary="고정된 결과입니다.", strengths=[], risks=["표본 제한"], observations=[],
+        disclaimer="과거 백테스트 해석이며 투자 조언이 아닙니다.",
+    )
+    monkeypatch.setattr(backtest_routes.explanation_service, "explain", lambda result: expected)
+
+    response = client.post(f"/api/v1/backtests/{backtest_id}/explanation")
+
+    assert response.status_code == 200
+    assert response.json()["summary"] == "고정된 결과입니다."
 
 
 def test_draft_requires_confirmation_before_backtest(monkeypatch):

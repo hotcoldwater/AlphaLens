@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 
+from ..clients.openai_client import OpenAIClientError
 from ..enums import BacktestStatus
+from ..schemas.backtest_explanation_schema import BacktestExplanation
 from ..schemas.backtest_schema import (
     BacktestRequest,
     BacktestResponse,
@@ -8,9 +10,11 @@ from ..schemas.backtest_schema import (
     TradeResponse,
 )
 from ..services.backtest_service import execute_backtest
+from ..services.backtest_explanation_service import BacktestExplanationService
 from ..services.backtest_store import backtest_store
 
 router = APIRouter(prefix="/api/v1/backtests", tags=["backtests"])
+explanation_service = BacktestExplanationService()
 
 
 @router.post("", response_model=BacktestResponse)
@@ -81,6 +85,16 @@ def _to_response(request: BacktestRequest, result=None) -> BacktestResponse:
 @router.get("/{backtest_id}/result", response_model=BacktestResponse)
 def get_backtest_result(backtest_id: str) -> BacktestResponse:
     return backtest_store.get(backtest_id)
+
+
+@router.post("/{backtest_id}/explanation", response_model=BacktestExplanation)
+def explain_backtest_result(backtest_id: str) -> BacktestExplanation:
+    result = backtest_store.get(backtest_id)
+    try:
+        return explanation_service.explain(result)
+    except OpenAIClientError as error:
+        status_code = 503 if "not configured" in str(error) else 502
+        raise HTTPException(status_code=status_code, detail=str(error)) from error
 
 
 @router.get("/{backtest_id}", response_model=BacktestResponse)

@@ -3,6 +3,8 @@ from datetime import date
 
 from openai import OpenAI
 
+from ..schemas.backtest_explanation_schema import BacktestExplanation
+from ..schemas.backtest_schema import BacktestResponse
 from ..schemas.strategy_parse_schema import StrategyParseResult
 
 
@@ -17,6 +19,17 @@ Rules:
 - Default market is KRX, daily timeframe, adjusted prices, and KRW.
 - The result is a draft only. It must always require user confirmation before execution.
 - If the request cannot be represented by the schema, explain it in warnings and use no unsupported feature.
+"""
+
+EXPLANATION_SYSTEM_PROMPT = """You explain fixed backtest results in Korean.
+
+Rules:
+- Use only the supplied values. Do not calculate, change, infer, or fabricate metrics.
+- Do not make predictions, price targets, buy/sell recommendations, or personalized financial advice.
+- Explain that the Buy & Hold reference uses the same supplied OHLCV data when it is present.
+- Distinguish observed results from limitations and risks.
+- Keep the tone concise and factual.
+- The disclaimer must state that this is historical backtest interpretation, not investment advice.
 """
 
 
@@ -52,4 +65,40 @@ class OpenAIStrategyClient:
             raise OpenAIClientError("OpenAI strategy parsing failed") from error
         if response.output_parsed is None:
             raise OpenAIClientError("OpenAI returned no structured strategy")
+        return response.output_parsed
+
+    def explain_backtest(self, result: BacktestResponse) -> BacktestExplanation:
+        if not self.api_key:
+            raise OpenAIClientError("OPENAI_API_KEY is not configured")
+        if self._client is None:
+            self._client = OpenAI(api_key=self.api_key)
+        payload = {
+            "data_period": [str(result.data_start_date), str(result.data_end_date)],
+            "data_points": result.data_points,
+            "total_return": result.total_return,
+            "cagr": result.cagr,
+            "max_drawdown": result.max_drawdown,
+            "volatility": result.volatility,
+            "sharpe_ratio": result.sharpe_ratio,
+            "win_rate": result.win_rate,
+            "trade_count": result.trade_count,
+            "average_holding_days": result.average_holding_days,
+            "total_cost": result.total_cost,
+            "benchmark_name": result.benchmark_name,
+            "benchmark_total_return": result.benchmark_total_return,
+            "benchmark_max_drawdown": result.benchmark_max_drawdown,
+        }
+        try:
+            response = self._client.responses.parse(
+                model=self.model,
+                input=[
+                    {"role": "system", "content": EXPLANATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Explain this fixed backtest result: {payload}"},
+                ],
+                text_format=BacktestExplanation,
+            )
+        except Exception as error:
+            raise OpenAIClientError("OpenAI backtest explanation failed") from error
+        if response.output_parsed is None:
+            raise OpenAIClientError("OpenAI returned no structured explanation")
         return response.output_parsed

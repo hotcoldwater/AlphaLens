@@ -40,6 +40,14 @@ export type BacktestResult = {
   equity_curve: EquityPoint[];
 };
 
+export type BacktestExplanation = {
+  summary: string;
+  strengths: string[];
+  risks: string[];
+  observations: string[];
+  disclaimer: string;
+};
+
 export type OHLCVBar = {
   date: string;
   open: number;

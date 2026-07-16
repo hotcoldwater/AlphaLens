@@ -1,5 +1,6 @@
 from .strategy_schema import Strategy
 from .backtest_schema import BacktestRequest, BacktestResponse
+from .backtest_explanation_schema import BacktestExplanation
 from .strategy_parse_schema import (
     StrategyParseRequest,
     StrategyParseResult,
@@ -8,6 +9,6 @@ from .strategy_parse_schema import (
 )
 
 __all__ = [
-    "BacktestRequest", "BacktestResponse", "Strategy", "StrategyParseRequest",
+    "BacktestExplanation", "BacktestRequest", "BacktestResponse", "Strategy", "StrategyParseRequest",
     "StrategyParseResult", "StrategyVersionListResponse", "StrategyVersionResponse",
 ]
