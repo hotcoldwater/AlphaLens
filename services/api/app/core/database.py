@@ -39,5 +39,11 @@ def initialize_schema() -> None:
                 confirmed_at TEXT NOT NULL,
                 PRIMARY KEY (strategy_id, version)
             );
+            CREATE TABLE IF NOT EXISTS backtest_runs (
+                backtest_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
