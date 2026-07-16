@@ -1,4 +1,4 @@
-import type { BacktestExplanation, BacktestResult, BacktestRunSummary, OHLCVBar, Strategy, StrategyDraft, StrategyLibraryItem, StrategyVersion } from "./types";
+import type { BacktestExplanation, BacktestResult, BacktestRunSummary, MarketDataFetchResult, OHLCVBar, Strategy, StrategyDraft, StrategyLibraryItem, StrategyVersion } from "./types";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -45,6 +45,14 @@ export function runDraftBacktest(draftId: string, data: OHLCVBar[]): Promise<Bac
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data }),
+  });
+}
+
+export function fetchDailyOhlcv(requestBody: { provider: "FMP" | "KRX"; symbol: string; start_date: string; end_date: string; adjusted_price: boolean }): Promise<MarketDataFetchResult> {
+  return request("/api/v1/market-data/daily-ohlcv", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
   });
 }
 

@@ -57,6 +57,17 @@ export type OHLCVBar = {
   volume: number;
 };
 
+export type MarketDataFetchResult = {
+  provider: string;
+  symbol: string;
+  adjustment: string;
+  data_version: string;
+  data_start_date: string;
+  data_end_date: string;
+  data_points: number;
+  data: OHLCVBar[];
+};
+
 export type IndicatorReference = {
   type: "INDICATOR";
   indicator: string;

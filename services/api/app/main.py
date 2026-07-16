@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api.backtest_routes import router as backtest_router
+from .api.market_data_routes import router as market_data_router
 from .api.strategy_routes import router as strategy_router
 from .api.strategy_draft_routes import router as strategy_draft_router
 from .schemas.error_schema import ErrorResponse
@@ -19,6 +20,7 @@ app.add_middleware(
 app.include_router(strategy_router)
 app.include_router(strategy_draft_router)
 app.include_router(backtest_router)
+app.include_router(market_data_router)
 
 
 @app.exception_handler(RequestValidationError)

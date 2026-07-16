@@ -1,7 +1,9 @@
 from fastapi.testclient import TestClient
 
 from services.api.app.main import app
-from services.api.app.api import backtest_routes, strategy_draft_routes
+from services.api.app.api import backtest_routes, market_data_routes, strategy_draft_routes
+from services.api.app.backtest_engine.market_data import build_data_version
+from services.api.app.services.market_data_service import MarketDataFetch
 from services.api.app.schemas.backtest_explanation_schema import BacktestExplanation
 from services.api.app.schemas.strategy_parse_schema import StrategyParseResult
 from tests.unit.test_strategy_schema import valid_strategy
@@ -108,6 +110,27 @@ def test_api_allows_local_web_client_cors_preflight():
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_market_data_endpoint_returns_normalized_provider_data(monkeypatch):
+    import pandas as pd
+
+    data = pd.DataFrame(bars()).assign(date=lambda frame: pd.to_datetime(frame["date"])).set_index("date")
+    version = build_data_version(data)
+    expected = MarketDataFetch(
+        provider="FMP", symbol="NVDA", adjustment="FMP adjusted with adjClose factor",
+        data=data, data_version=version,
+    )
+    monkeypatch.setattr(market_data_routes.market_data_service, "fetch", lambda **_: expected)
+
+    response = client.post("/api/v1/market-data/daily-ohlcv", json={
+        "provider": "FMP", "symbol": "nvda", "start_date": "2024-01-01", "end_date": "2024-01-04", "adjusted_price": True,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["symbol"] == "NVDA"
+    assert response.json()["data_version"] == version.identifier
+    assert response.json()["data_points"] == 4
 
 
 def test_backtest_result_returns_not_found_error():

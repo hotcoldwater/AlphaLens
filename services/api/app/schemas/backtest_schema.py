@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +15,29 @@ class OHLCVBar(BaseModel):
     low: float = Field(gt=0)
     close: float = Field(gt=0)
     volume: float = Field(ge=0)
+
+
+class MarketDataFetchRequest(BaseModel):
+    """Request daily market data from a configured external provider."""
+
+    model_config = ConfigDict(extra="forbid")
+    provider: Literal["FMP", "KRX"]
+    symbol: str = Field(min_length=1, max_length=32)
+    start_date: date
+    end_date: date
+    adjusted_price: bool = True
+
+
+class MarketDataFetchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: str
+    symbol: str
+    adjustment: str
+    data_version: str
+    data_start_date: date
+    data_end_date: date
+    data_points: int
+    data: list[OHLCVBar]
 
 
 class BacktestRequest(BaseModel):
