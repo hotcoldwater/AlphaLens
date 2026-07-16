@@ -1,4 +1,4 @@
-import type { BacktestResult, OHLCVBar, StrategyDraft } from "./types";
+import type { BacktestResult, OHLCVBar, Strategy, StrategyDraft } from "./types";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -30,6 +30,14 @@ export function parseStrategy(rawInput: string): Promise<StrategyDraft> {
 
 export function confirmDraft(draftId: string): Promise<unknown> {
   return request(`/api/v1/strategy-drafts/${encodeURIComponent(draftId)}/confirm`, { method: "POST" });
+}
+
+export function updateDraft(draftId: string, strategy: Strategy): Promise<StrategyDraft> {
+  return request(`/api/v1/strategy-drafts/${encodeURIComponent(draftId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ strategy }),
+  });
 }
 
 export function runDraftBacktest(draftId: string, data: OHLCVBar[]): Promise<BacktestResult> {

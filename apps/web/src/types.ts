@@ -63,9 +63,15 @@ export type Strategy = {
   market: string;
   universe: { type: string; symbols: string[] };
   period: { start_date: string; end_date: string };
+  data: { timeframe: string; adjusted_price: boolean };
   entry_rules: { logic: string; conditions: Condition[] };
   exit_rules: { logic: string; conditions: Condition[] };
+  position_sizing: { method: string; value: number | null };
+  risk_management: { stop_loss: number | null; take_profit: number | null; maximum_holding_days: number | null };
+  execution: { signal_time: string; execution_time: string };
+  costs: { commission_rate: number; slippage_rate: number; tax_rate: number };
   capital: { initial_cash: number; currency: string };
+  benchmark: string | null;
 };
 
 export type StrategyDraft = {
