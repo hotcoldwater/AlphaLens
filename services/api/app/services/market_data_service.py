@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -55,7 +56,11 @@ class MarketDataService:
     @staticmethod
     def _cache(provider: str, symbol: str, data: pd.DataFrame, version: DataVersion) -> None:
         # The hash is part of the filename: later requests never overwrite prior input data.
-        directory = Path("data/market_data") / provider.lower() / symbol.upper()
+        directory = (
+            Path(os.getenv("ALPHALENS_MARKET_DATA_PATH", "data/market_data"))
+            / provider.lower()
+            / symbol.upper()
+        )
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"{version.identifier.removeprefix('sha256:')}.csv"
         if not path.exists():

@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: alphalens-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    disk:
+      name: alphalens-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: ALPHALENS_DATABASE_PATH
+        value: /var/data/alphalens.db
+      - key: ALPHALENS_MARKET_DATA_PATH
+        value: /var/data/market_data
+      - key: ALPHALENS_ALLOWED_ORIGINS
+        value: https://alphalens-cds.pages.dev
+      - key: OPENAI_MODEL
+        value: gpt-5.6
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: FMP_API_KEY
+        sync: false
+      - key: KRX_API_KEY
+        sync: false

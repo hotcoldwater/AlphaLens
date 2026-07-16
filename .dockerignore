@@ -1,0 +1,10 @@
+.git
+.env
+.pytest_cache
+__pycache__
+*.py[cod]
+node_modules
+apps/web/node_modules
+apps/web/dist
+data
+tests
