@@ -63,3 +63,70 @@ def test_metrics_and_repeated_runs_are_reproducible():
     assert first.total_return == pytest.approx(1.0)
     assert first.max_drawdown == pytest.approx(0.0)
     assert first.as_dict() == second.as_dict()
+
+
+def test_stop_loss_is_signaled_at_close_and_filled_at_next_open():
+    data = pd.DataFrame(
+        {"open": [100, 100, 90, 90], "close": [100, 90, 90, 90]},
+        index=pd.date_range("2024-01-01", periods=4),
+    )
+    strategy = Strategy.model_validate(
+        {
+            **valid_strategy(),
+            "capital": {"initial_cash": 1_000},
+            "position_sizing": {"method": "AVAILABLE_CASH"},
+            "risk_management": {"stop_loss": 0.05},
+        }
+    )
+    entry = pd.Series([True, False, False, False], index=data.index)
+    exit = pd.Series(False, index=data.index)
+
+    result = run_backtest(data, entry, exit, strategy)
+
+    assert result.trade_count == 1
+    assert result.trades[0].entry_date == data.index[1]
+    assert result.trades[0].exit_date == data.index[2]
+
+
+def test_maximum_holding_days_is_filled_at_next_open():
+    data = pd.DataFrame(
+        {"open": [100, 100, 101, 102], "close": [100, 100, 101, 102]},
+        index=pd.date_range("2024-01-01", periods=4),
+    )
+    strategy = Strategy.model_validate(
+        {
+            **valid_strategy(),
+            "capital": {"initial_cash": 1_000},
+            "position_sizing": {"method": "AVAILABLE_CASH"},
+            "risk_management": {"maximum_holding_days": 1},
+        }
+    )
+    entry = pd.Series([True, False, False, False], index=data.index)
+    exit = pd.Series(False, index=data.index)
+
+    result = run_backtest(data, entry, exit, strategy)
+
+    assert result.trade_count == 1
+    assert result.trades[0].exit_date == data.index[3]
+
+
+def test_take_profit_is_signaled_at_close_and_filled_at_next_open():
+    data = pd.DataFrame(
+        {"open": [100, 100, 110, 110], "close": [100, 110, 110, 110]},
+        index=pd.date_range("2024-01-01", periods=4),
+    )
+    strategy = Strategy.model_validate(
+        {
+            **valid_strategy(),
+            "capital": {"initial_cash": 1_000},
+            "position_sizing": {"method": "AVAILABLE_CASH"},
+            "risk_management": {"take_profit": 0.05},
+        }
+    )
+    entry = pd.Series([True, False, False, False], index=data.index)
+    exit = pd.Series(False, index=data.index)
+
+    result = run_backtest(data, entry, exit, strategy)
+
+    assert result.trade_count == 1
+    assert result.trades[0].exit_date == data.index[2]

@@ -87,6 +87,7 @@ def run_backtest(
     tax = strategy.costs.tax_rate
     entry_orders = entry_signal.shift(1).eq(True)
     exit_orders = exit_signal.shift(1).eq(True)
+    risk_exit_order = False
 
     for index, row in data.iterrows():
         # Signals are calculated after the previous close and executed today.
@@ -100,7 +101,7 @@ def run_backtest(
                 cash -= gross + entry_cost
                 entry_date = index
                 entry_price = fill_price
-        elif quantity > 0 and bool(exit_orders.loc[index]):
+        elif quantity > 0 and (bool(exit_orders.loc[index]) or risk_exit_order):
             fill_price = float(row["open"]) * (1 - slippage)
             gross = quantity * fill_price
             exit_cost = gross * (commission + tax)
@@ -126,8 +127,20 @@ def run_backtest(
             entry_date = None
             entry_price = 0.0
             entry_cost = 0.0
+            risk_exit_order = False
 
         equity_values.append(cash + quantity * float(row["close"]))
+
+        # Risk conditions are evaluated after this close, then filled at the next open.
+        if quantity > 0:
+            assert entry_date is not None
+            risk_exit_order = _should_exit_for_risk(
+                close=float(row["close"]),
+                entry_price=entry_price,
+                entry_date=entry_date,
+                current_date=index,
+                strategy=strategy,
+            )
 
     equity_curve = pd.Series(equity_values, index=data.index, name="equity")
     final_equity = float(equity_curve.iloc[-1])
@@ -168,6 +181,24 @@ def _buy_quantity(cash: float, price: float, strategy: Strategy) -> int:
         return max(min(floor(float(strategy.position_sizing.value)), floor(cash / unit_cost)), 0)
     unit_cost = price * (1 + strategy.costs.commission_rate)
     return max(floor(budget / unit_cost), 0)
+
+
+def _should_exit_for_risk(
+    close: float,
+    entry_price: float,
+    entry_date: pd.Timestamp,
+    current_date: pd.Timestamp,
+    strategy: Strategy,
+) -> bool:
+    risk = strategy.risk_management
+    if risk.stop_loss is not None and close <= entry_price * (1 - risk.stop_loss):
+        return True
+    if risk.take_profit is not None and close >= entry_price * (1 + risk.take_profit):
+        return True
+    return (
+        risk.maximum_holding_days is not None
+        and (current_date - entry_date).days >= risk.maximum_holding_days
+    )
 
 
 def _validate_inputs(data: pd.DataFrame, entry_signal: pd.Series, exit_signal: pd.Series) -> None:
