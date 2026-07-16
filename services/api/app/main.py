@@ -4,10 +4,12 @@ from fastapi.responses import JSONResponse
 
 from .api.backtest_routes import router as backtest_router
 from .api.strategy_routes import router as strategy_router
+from .api.strategy_draft_routes import router as strategy_draft_router
 from .schemas.error_schema import ErrorResponse
 
 app = FastAPI(title="AlphaLens API", version="0.1.0")
 app.include_router(strategy_router)
+app.include_router(strategy_draft_router)
 app.include_router(backtest_router)
 
 
