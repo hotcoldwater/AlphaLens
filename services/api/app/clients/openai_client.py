@@ -25,6 +25,7 @@ EXPLANATION_SYSTEM_PROMPT = """You explain fixed backtest results in Korean.
 
 Rules:
 - Use only the supplied values. Do not calculate, change, infer, or fabricate metrics.
+- Use the supplied human-readable formatted values exactly. Never output raw floating-point values.
 - Do not make predictions, price targets, buy/sell recommendations, or personalized financial advice.
 - Explain that the Buy & Hold reference uses the same supplied OHLCV data when it is present.
 - Distinguish observed results from limitations and risks.
@@ -73,20 +74,20 @@ class OpenAIStrategyClient:
         if self._client is None:
             self._client = OpenAI(api_key=self.api_key)
         payload = {
-            "data_period": [str(result.data_start_date), str(result.data_end_date)],
+            "data_period": f"{result.data_start_date} ~ {result.data_end_date}",
             "data_points": result.data_points,
-            "total_return": result.total_return,
-            "cagr": result.cagr,
-            "max_drawdown": result.max_drawdown,
-            "volatility": result.volatility,
-            "sharpe_ratio": result.sharpe_ratio,
-            "win_rate": result.win_rate,
+            "total_return": _format_percent(result.total_return),
+            "cagr": _format_percent(result.cagr),
+            "max_drawdown": _format_percent(result.max_drawdown),
+            "volatility": _format_percent(result.volatility),
+            "sharpe_ratio": f"{result.sharpe_ratio:.2f}",
+            "win_rate": _format_percent(result.win_rate),
             "trade_count": result.trade_count,
-            "average_holding_days": result.average_holding_days,
-            "total_cost": result.total_cost,
+            "average_holding_days": f"{result.average_holding_days:.1f}일",
+            "total_cost": f"{result.total_cost:,.0f} KRW",
             "benchmark_name": result.benchmark_name,
-            "benchmark_total_return": result.benchmark_total_return,
-            "benchmark_max_drawdown": result.benchmark_max_drawdown,
+            "benchmark_total_return": _format_percent(result.benchmark_total_return),
+            "benchmark_max_drawdown": _format_percent(result.benchmark_max_drawdown),
         }
         try:
             response = self._client.responses.parse(
@@ -102,3 +103,7 @@ class OpenAIStrategyClient:
         if response.output_parsed is None:
             raise OpenAIClientError("OpenAI returned no structured explanation")
         return response.output_parsed
+
+
+def _format_percent(value: float) -> str:
+    return f"{value * 100:.2f}%"

@@ -68,6 +68,7 @@ def test_openai_client_explains_fixed_result_with_structured_output():
     assert parsed.summary == "고정된 결과 요약"
     assert responses.calls[0]["text_format"] is BacktestExplanation
     assert "Do not calculate" in responses.calls[0]["input"][0]["content"]
+    assert "10.00%" in responses.calls[0]["input"][1]["content"]
 
 
 def test_parse_endpoint_returns_draft_and_never_auto_confirms(monkeypatch):
