@@ -20,6 +20,15 @@ def create_backtest(request: BacktestRequest) -> BacktestResponse:
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
+    return _to_response(request, result)
+
+
+def _to_response(request: BacktestRequest, result=None) -> BacktestResponse:
+    if result is None:
+        try:
+            result = execute_backtest(request)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
     response = BacktestResponse(
         backtest_id="pending",
         status=BacktestStatus.SUCCEEDED,

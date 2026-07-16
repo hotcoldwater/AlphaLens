@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
 from services.api.app.main import app
+from services.api.app.api import strategy_draft_routes
+from services.api.app.schemas.strategy_parse_schema import StrategyParseResult
 from tests.unit.test_strategy_schema import valid_strategy
 
 
@@ -84,3 +86,37 @@ def test_backtest_result_returns_not_found_error():
         "message": "backtest not found",
         "details": [],
     }
+
+
+def test_draft_requires_confirmation_before_backtest(monkeypatch):
+    parsed = StrategyParseResult(strategy=api_strategy())
+    monkeypatch.setattr(strategy_draft_routes.parser_service, "parse", lambda _: parsed)
+
+    draft_response = client.post(
+        "/api/v1/strategy-drafts/parse",
+        json={"raw_input": "삼성전자 SMA 교차 전략"},
+    )
+    assert draft_response.status_code == 200
+    draft = draft_response.json()
+    draft_id = draft["draft_id"]
+    assert draft["status"] == "READY_TO_CONFIRM"
+    assert draft["needs_confirmation"] is True
+
+    blocked = client.post(
+        f"/api/v1/strategy-drafts/{draft_id}/backtest",
+        json={"data": bars()},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "HTTP_ERROR"
+
+    confirmed = client.post(f"/api/v1/strategy-drafts/{draft_id}/confirm")
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "CONFIRMED"
+    assert confirmed.json()["version"] == 1
+
+    executed = client.post(
+        f"/api/v1/strategy-drafts/{draft_id}/backtest",
+        json={"data": bars()},
+    )
+    assert executed.status_code == 200
+    assert executed.json()["trade_count"] == 1
