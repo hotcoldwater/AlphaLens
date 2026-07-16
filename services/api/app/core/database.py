@@ -12,9 +12,7 @@ def database_path() -> Path:
 
 
 def database_url() -> str | None:
-    """Use SQLite only when explicitly requested or when no Postgres URL exists."""
-    if os.getenv("ALPHALENS_DATABASE_PATH"):
-        return None
+    """Prefer managed PostgreSQL when a deployment URL is configured."""
     configured = os.getenv("DATABASE_URL", "").strip()
     return configured or None
 
