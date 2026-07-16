@@ -47,7 +47,9 @@ class OpenAIClientError(RuntimeError):
 
 class OpenAIStrategyClient:
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        configured_api_key = api_key if api_key is not None else os.getenv("OPENAI_API_KEY")
+        # Environment-variable UIs can accidentally retain a trailing newline.
+        self.api_key = configured_api_key.strip() if configured_api_key else None
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-5.6")
         self._client: OpenAI | None = None
 
@@ -70,8 +72,8 @@ class OpenAIStrategyClient:
                 text_format=StrategyParseResult,
             )
         except Exception as error:
-            # Keep the response safe while preserving the underlying cause in server logs.
-            logger.exception("OpenAI strategy parsing request failed")
+            # Never log request headers or exception details because they can include API keys.
+            logger.warning("OpenAI strategy parsing failed: %s", type(error).__name__)
             raise OpenAIClientError(
                 f"OpenAI strategy parsing failed ({type(error).__name__})"
             ) from error
@@ -110,7 +112,7 @@ class OpenAIStrategyClient:
                 text_format=BacktestExplanation,
             )
         except Exception as error:
-            logger.exception("OpenAI backtest explanation request failed")
+            logger.warning("OpenAI backtest explanation failed: %s", type(error).__name__)
             raise OpenAIClientError(
                 f"OpenAI backtest explanation failed ({type(error).__name__})"
             ) from error

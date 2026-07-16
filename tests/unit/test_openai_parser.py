@@ -47,6 +47,12 @@ def test_openai_client_requires_api_key():
         OpenAIStrategyClient(api_key="").parse_strategy("전략")
 
 
+def test_openai_client_trims_configured_api_key_whitespace():
+    client = OpenAIStrategyClient(api_key=" test-key\n", model="test-model")
+
+    assert client.api_key == "test-key"
+
+
 def test_openai_client_returns_safe_error_type_when_parsing_fails():
     client = OpenAIStrategyClient(api_key="test-key", model="test-model")
 
