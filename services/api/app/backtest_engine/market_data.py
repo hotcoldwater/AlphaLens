@@ -1,9 +1,23 @@
+import hashlib
+import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
 
 REQUIRED_COLUMNS = {"open", "high", "low", "close", "volume"}
+VERSION_COLUMNS = ("open", "high", "low", "close", "volume")
+
+
+@dataclass(frozen=True)
+class DataVersion:
+    """A reproducible identifier for the validated OHLCV data used by a run."""
+
+    identifier: str
+    start_date: str
+    end_date: str
+    point_count: int
 
 
 def load_ohlcv(path: str | Path) -> pd.DataFrame:
@@ -54,3 +68,22 @@ def validate_ohlcv(data: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("low must be at most open, high, and close")
     normalized[list(REQUIRED_COLUMNS)] = values
     return normalized.sort_index()
+
+
+def build_data_version(data: pd.DataFrame) -> DataVersion:
+    """Fingerprint normalized OHLCV input so a run can identify its exact data."""
+    validated = validate_ohlcv(data)
+    records = [
+        [
+            index.isoformat(),
+            *[float(row[column]) for column in VERSION_COLUMNS],
+        ]
+        for index, row in validated.loc[:, list(VERSION_COLUMNS)].iterrows()
+    ]
+    payload = json.dumps(records, ensure_ascii=True, separators=(",", ":"))
+    return DataVersion(
+        identifier=f"sha256:{hashlib.sha256(payload.encode()).hexdigest()}",
+        start_date=validated.index[0].date().isoformat(),
+        end_date=validated.index[-1].date().isoformat(),
+        point_count=len(validated),
+    )

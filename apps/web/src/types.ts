@@ -16,6 +16,10 @@ export type EquityPoint = { date: string; equity: number };
 export type BacktestResult = {
   backtest_id: string;
   status: string;
+  data_version: string;
+  data_start_date: string | null;
+  data_end_date: string | null;
+  data_points: number;
   initial_cash: number;
   final_equity: number;
   total_return: number;

@@ -21,10 +21,11 @@ class BacktestStore:
         saved = response.model_copy(update={"backtest_id": backtest_id})
         with self._lock, connect() as connection:
             connection.execute(
-                "INSERT INTO backtest_runs (backtest_id, status, result_json, created_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO backtest_runs (backtest_id, status, data_version, result_json, created_at) VALUES (?, ?, ?, ?, ?)",
                 (
                     backtest_id,
                     saved.status.value,
+                    saved.data_version,
                     json.dumps(saved.model_dump(mode="json")),
                     datetime.now(timezone.utc).isoformat(),
                 ),

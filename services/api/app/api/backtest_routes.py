@@ -32,18 +32,22 @@ def _to_response(request: BacktestRequest, result=None) -> BacktestResponse:
     response = BacktestResponse(
         backtest_id="pending",
         status=BacktestStatus.SUCCEEDED,
-        initial_cash=result.initial_cash,
-        final_equity=result.final_equity,
-        total_return=result.total_return,
-        cagr=result.cagr,
-        max_drawdown=result.max_drawdown,
-        volatility=result.volatility,
-        sharpe_ratio=result.sharpe_ratio,
-        win_rate=result.win_rate,
-        average_trade_return=result.average_trade_return,
-        average_holding_days=result.average_holding_days,
-        total_cost=result.total_cost,
-        trade_count=result.trade_count,
+        data_version=result.data_version.identifier,
+        data_start_date=result.data_version.start_date,
+        data_end_date=result.data_version.end_date,
+        data_points=result.data_version.point_count,
+        initial_cash=result.result.initial_cash,
+        final_equity=result.result.final_equity,
+        total_return=result.result.total_return,
+        cagr=result.result.cagr,
+        max_drawdown=result.result.max_drawdown,
+        volatility=result.result.volatility,
+        sharpe_ratio=result.result.sharpe_ratio,
+        win_rate=result.result.win_rate,
+        average_trade_return=result.result.average_trade_return,
+        average_holding_days=result.result.average_holding_days,
+        total_cost=result.result.total_cost,
+        trade_count=result.result.trade_count,
         trades=[
             TradeResponse(
                 entry_date=trade.entry_date.date(),
@@ -57,11 +61,11 @@ def _to_response(request: BacktestRequest, result=None) -> BacktestResponse:
                 return_rate=trade.return_rate,
                 holding_days=trade.holding_days,
             )
-            for trade in result.trades
+            for trade in result.result.trades
         ],
         equity_curve=[
             EquityPoint(date=index.date(), equity=float(equity))
-            for index, equity in result.equity_curve.items()
+            for index, equity in result.result.equity_curve.items()
         ],
     )
     return backtest_store.save(response)

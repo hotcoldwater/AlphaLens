@@ -51,6 +51,10 @@ def test_backtest_endpoint_runs_engine_and_returns_response_schema():
     backtest_id = body["backtest_id"]
     assert body["status"] == "SUCCEEDED"
     assert body["trade_count"] == 1
+    assert body["data_version"].startswith("sha256:")
+    assert body["data_points"] == 4
+    assert body["data_start_date"] == "2024-01-01"
+    assert body["data_end_date"] == "2024-01-04"
     assert body["total_cost"] == 0
     assert body["win_rate"] == 1
     assert body["average_holding_days"] == 1
@@ -60,6 +64,18 @@ def test_backtest_endpoint_runs_engine_and_returns_response_schema():
     result = client.get(f"/api/v1/backtests/{backtest_id}/result")
     assert result.status_code == 200
     assert result.json()["backtest_id"] == backtest_id
+    assert result.json()["data_version"] == body["data_version"]
+
+
+def test_backtest_endpoint_is_reproducible_for_same_strategy_and_data():
+    first = client.post("/api/v1/backtests", json={"strategy": api_strategy(), "data": bars()})
+    second = client.post("/api/v1/backtests", json={"strategy": api_strategy(), "data": bars()})
+
+    assert first.status_code == second.status_code == 200
+    first_body = first.json()
+    second_body = second.json()
+    for field in ("data_version", "final_equity", "total_return", "max_drawdown", "trade_count", "trades", "equity_curve"):
+        assert first_body[field] == second_body[field]
 
 
 def test_backtest_endpoint_rejects_data_outside_strategy_period():

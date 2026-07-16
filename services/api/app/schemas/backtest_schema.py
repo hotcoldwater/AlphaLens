@@ -45,6 +45,10 @@ class EquityPoint(BaseModel):
 class BacktestResponse(BaseModel):
     backtest_id: str
     status: BacktestStatus
+    data_version: str = "unversioned"
+    data_start_date: date | None = None
+    data_end_date: date | None = None
+    data_points: int = 0
     initial_cash: float
     final_equity: float
     total_return: float

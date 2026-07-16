@@ -42,8 +42,14 @@ def initialize_schema() -> None:
             CREATE TABLE IF NOT EXISTS backtest_runs (
                 backtest_id TEXT PRIMARY KEY,
                 status TEXT NOT NULL,
+                data_version TEXT NOT NULL DEFAULT 'unversioned',
                 result_json TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
             """
         )
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(backtest_runs)")}
+        if "data_version" not in columns:
+            connection.execute(
+                "ALTER TABLE backtest_runs ADD COLUMN data_version TEXT NOT NULL DEFAULT 'unversioned'"
+            )
