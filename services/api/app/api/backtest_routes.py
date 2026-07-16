@@ -36,6 +36,13 @@ def _to_response(request: BacktestRequest, result=None) -> BacktestResponse:
         data_start_date=result.data_version.start_date,
         data_end_date=result.data_version.end_date,
         data_points=result.data_version.point_count,
+        benchmark_name="Same-data Buy & Hold",
+        benchmark_total_return=result.benchmark_total_return,
+        benchmark_max_drawdown=result.benchmark_max_drawdown,
+        benchmark_equity_curve=[
+            EquityPoint(date=index.date(), equity=float(equity))
+            for index, equity in result.benchmark_equity_curve.items()
+        ],
         initial_cash=result.result.initial_cash,
         final_equity=result.result.final_equity,
         total_return=result.result.total_return,

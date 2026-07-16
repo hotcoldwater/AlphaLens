@@ -24,3 +24,17 @@ def sharpe_ratio(
     if standard_deviation == 0:
         return 0.0
     return float(excess_returns.mean() / standard_deviation * sqrt(periods_per_year))
+
+
+def buy_and_hold_equity_curve(close: pd.Series, initial_cash: float) -> pd.Series:
+    """Create a same-data Buy & Hold reference curve for strategy comparison."""
+    if close.empty:
+        raise ValueError("close prices must not be empty")
+    normalized = close.astype(float) / float(close.iloc[0])
+    return normalized * initial_cash
+
+
+def maximum_drawdown(equity_curve: pd.Series) -> float:
+    if equity_curve.empty:
+        return 0.0
+    return float((equity_curve / equity_curve.cummax() - 1).min())

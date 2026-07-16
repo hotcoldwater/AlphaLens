@@ -20,6 +20,10 @@ export type BacktestResult = {
   data_start_date: string | null;
   data_end_date: string | null;
   data_points: number;
+  benchmark_name: string;
+  benchmark_total_return: number;
+  benchmark_max_drawdown: number;
+  benchmark_equity_curve: EquityPoint[];
   initial_cash: number;
   final_equity: number;
   total_return: number;

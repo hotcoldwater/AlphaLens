@@ -55,6 +55,9 @@ def test_backtest_endpoint_runs_engine_and_returns_response_schema():
     assert body["data_points"] == 4
     assert body["data_start_date"] == "2024-01-01"
     assert body["data_end_date"] == "2024-01-04"
+    assert body["benchmark_name"] == "Same-data Buy & Hold"
+    assert body["benchmark_total_return"] == 0
+    assert len(body["benchmark_equity_curve"]) == 4
     assert body["total_cost"] == 0
     assert body["win_rate"] == 1
     assert body["average_holding_days"] == 1

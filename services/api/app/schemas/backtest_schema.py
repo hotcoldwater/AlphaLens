@@ -49,6 +49,10 @@ class BacktestResponse(BaseModel):
     data_start_date: date | None = None
     data_end_date: date | None = None
     data_points: int = 0
+    benchmark_name: str = "Same-data Buy & Hold"
+    benchmark_total_return: float = 0.0
+    benchmark_max_drawdown: float = 0.0
+    benchmark_equity_curve: list[EquityPoint] = Field(default_factory=list)
     initial_cash: float
     final_equity: float
     total_return: float
