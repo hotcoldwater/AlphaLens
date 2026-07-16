@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import date
 
 from openai import OpenAI
@@ -6,6 +7,9 @@ from openai import OpenAI
 from ..schemas.backtest_explanation_schema import BacktestExplanation
 from ..schemas.backtest_schema import BacktestResponse
 from ..schemas.strategy_parse_schema import StrategyParseResult
+
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """You convert Korean or English natural-language investment strategies into the supplied Strategy schema.
@@ -66,6 +70,8 @@ class OpenAIStrategyClient:
                 text_format=StrategyParseResult,
             )
         except Exception as error:
+            # Keep the response safe while preserving the underlying cause in server logs.
+            logger.exception("OpenAI strategy parsing request failed")
             raise OpenAIClientError(
                 f"OpenAI strategy parsing failed ({type(error).__name__})"
             ) from error
@@ -104,6 +110,7 @@ class OpenAIStrategyClient:
                 text_format=BacktestExplanation,
             )
         except Exception as error:
+            logger.exception("OpenAI backtest explanation request failed")
             raise OpenAIClientError(
                 f"OpenAI backtest explanation failed ({type(error).__name__})"
             ) from error
