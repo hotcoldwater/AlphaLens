@@ -2,7 +2,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .strategy_schema import Strategy
+from .strategy_schema import StrategyDefinition
 from ..enums import StrategyStatus
 
 
@@ -13,11 +13,12 @@ class StrategyParseRequest(BaseModel):
 
 class StrategyParseResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    strategy: Strategy
+    strategy: StrategyDefinition
     missing_fields: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     needs_confirmation: bool = True
+    needs_clarification: bool = False
 
 
 class StrategyDraftResponse(StrategyParseResult):
@@ -30,14 +31,14 @@ class StrategyDraftResponse(StrategyParseResult):
 
 class StrategyDraftUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    strategy: Strategy
+    strategy: StrategyDefinition
 
 
 class ConfirmedStrategyResponse(BaseModel):
     strategy_id: str
     version: int
     status: StrategyStatus
-    strategy: Strategy
+    strategy: StrategyDefinition
 
 
 class StrategyVersionResponse(BaseModel):
@@ -45,7 +46,7 @@ class StrategyVersionResponse(BaseModel):
     version: int
     draft_id: str
     confirmed_at: str
-    strategy: Strategy
+    strategy: StrategyDefinition
 
 
 class StrategyVersionListResponse(BaseModel):
@@ -57,7 +58,7 @@ class StrategyLibraryItem(BaseModel):
     strategy_id: str
     latest_version: int
     confirmed_at: str
-    strategy: Strategy
+    strategy: StrategyDefinition
 
 
 class StrategyLibraryResponse(BaseModel):
@@ -66,7 +67,8 @@ class StrategyLibraryResponse(BaseModel):
 
 class DraftBacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    data: Annotated[list["OHLCVBar"], Field(min_length=1)]
+    data: list["OHLCVBar"] | None = None
+    data_by_symbol: dict[str, Annotated[list["OHLCVBar"], Field(min_length=1)]] | None = None
 
 
 from .backtest_schema import OHLCVBar

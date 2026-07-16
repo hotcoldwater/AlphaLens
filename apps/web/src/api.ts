@@ -62,14 +62,14 @@ export function updateDraft(
 
 export function runDraftBacktest(
   draftId: string,
-  data: OHLCVBar[],
+  requestBody: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]> },
 ): Promise<BacktestResult> {
   return request(
     `/api/v1/strategy-drafts/${encodeURIComponent(draftId)}/backtest`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data }),
+      body: JSON.stringify(requestBody),
     },
   );
 }

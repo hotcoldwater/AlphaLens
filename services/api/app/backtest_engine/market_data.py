@@ -87,3 +87,28 @@ def build_data_version(data: pd.DataFrame) -> DataVersion:
         end_date=validated.index[-1].date().isoformat(),
         point_count=len(validated),
     )
+
+
+def build_multi_asset_data_version(data_by_symbol: dict[str, pd.DataFrame]) -> DataVersion:
+    """Fingerprint every aligned asset so regime-switch runs remain reproducible."""
+    normalized = {symbol.upper(): validate_ohlcv(data) for symbol, data in data_by_symbol.items()}
+    records = {
+        symbol: [
+            [index.isoformat(), *[float(row[column]) for column in VERSION_COLUMNS]]
+            for index, row in data.loc[:, list(VERSION_COLUMNS)].iterrows()
+        ]
+        for symbol, data in sorted(normalized.items())
+    }
+    payload = json.dumps(records, ensure_ascii=True, separators=(",", ":"))
+    all_indexes = [data.index for data in normalized.values()]
+    common_index = all_indexes[0]
+    for index in all_indexes[1:]:
+        common_index = common_index.intersection(index)
+    if common_index.empty:
+        raise ValueError("no common market data dates across strategy symbols")
+    return DataVersion(
+        identifier=f"sha256:{hashlib.sha256(payload.encode()).hexdigest()}",
+        start_date=common_index.min().date().isoformat(),
+        end_date=common_index.max().date().isoformat(),
+        point_count=len(common_index),
+    )

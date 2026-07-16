@@ -34,6 +34,27 @@ def bars() -> list[dict]:
     ]
 
 
+def regime_switch_strategy() -> dict:
+    return {
+        "strategy_type": "REGIME_SWITCH",
+        "strategy_name": "SPY to GLD defensive switch",
+        "market": "NASDAQ",
+        "universe": {"type": "REGIME_SWITCH", "symbols": ["SPY", "GLD"]},
+        "period": {"start_date": "2024-01-01", "end_date": "2024-01-04"},
+        "default_symbol": "SPY",
+        "switch_rule": {
+            "signal_symbol": "SPY",
+            "condition": {
+                "left": {"indicator": "CLOSE"},
+                "operator": "LESS_THAN",
+                "right": {"indicator": "SMA", "period": 2},
+            },
+            "target_symbol": "GLD",
+        },
+        "capital": {"initial_cash": 10_000, "currency": "USD"},
+    }
+
+
 def test_strategy_validation_endpoint():
     response = client.post("/api/v1/strategies/validate", json=api_strategy())
     assert response.status_code == 200
@@ -82,6 +103,26 @@ def test_backtest_response_uses_strategy_currency():
 
     assert response.status_code == 200
     assert response.json()["currency"] == "USD"
+
+
+def test_backtest_endpoint_runs_two_asset_regime_switch():
+    spy = bars()
+    spy[1]["close"] = 90
+    spy[2]["close"] = 110
+    spy[1]["low"] = 89
+    spy[2]["high"] = 111
+    response = client.post(
+        "/api/v1/backtests",
+        json={
+            "strategy": regime_switch_strategy(),
+            "data_by_symbol": {"SPY": spy, "GLD": bars()},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["currency"] == "USD"
+    assert response.json()["benchmark_name"] == "Same-data Buy & Hold (SPY)"
+    assert response.json()["trades"][0]["symbol"] == "SPY"
 
 
 def test_backtest_endpoint_is_reproducible_for_same_strategy_and_data():

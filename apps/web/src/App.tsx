@@ -19,6 +19,7 @@ import type {
   Condition,
   EquityPoint,
   OHLCVBar,
+  RegimeSwitchStrategy,
   Strategy,
   StrategyDraft,
   StrategyLibraryItem,
@@ -103,6 +104,75 @@ function operandLabel(operand: Condition["left"]) {
 }
 function conditionLabel(condition: Condition) {
   return `${operandLabel(condition.left)} ${condition.operator.replace("CROSS_ABOVE", "상향 돌파").replace("CROSS_BELOW", "하향 돌파")} ${operandLabel(condition.right)}`;
+}
+
+function isRegimeSwitch(strategy: Strategy): strategy is RegimeSwitchStrategy {
+  return strategy.strategy_type === "REGIME_SWITCH";
+}
+
+function strategyRuleSummary(strategy: Strategy) {
+  if (isRegimeSwitch(strategy)) {
+    return `${strategy.switch_rule.signal_symbol}: ${conditionLabel(strategy.switch_rule.condition)} → ${strategy.switch_rule.target_symbol}`;
+  }
+  return `${strategy.entry_rules.conditions.map(conditionLabel).join(" / ")} | ${strategy.exit_rules.conditions.map(conditionLabel).join(" / ")}`;
+}
+
+function ConditionFields({
+  condition,
+  onChange,
+}: {
+  condition: Condition;
+  onChange: (condition: Condition) => void;
+}) {
+  const updateIndicator = (side: "left" | "right", indicator: string) => {
+    const operand = { type: "INDICATOR" as const, indicator, period: indicator === "SMA" || indicator === "EMA" || indicator === "RSI" ? 20 : null };
+    onChange({ ...condition, [side]: operand });
+  };
+  const updatePeriod = (side: "left" | "right", value: number) => {
+    const current = condition[side];
+    if (current.type !== "INDICATOR") return;
+    onChange({ ...condition, [side]: { ...current, period: value } });
+  };
+  const renderOperand = (side: "left" | "right") => {
+    const operand = condition[side];
+    return (
+      <label>
+        {side === "left" ? "왼쪽 지표" : "오른쪽 기준"}
+        <select
+          value={operand.type === "VALUE" ? "VALUE" : operand.indicator}
+          onChange={(event) => {
+            if (event.target.value === "VALUE") onChange({ ...condition, [side]: { type: "VALUE", value: 0 } });
+            else updateIndicator(side, event.target.value);
+          }}
+        >
+          <option value="CLOSE">종가</option>
+          <option value="SMA">SMA</option>
+          <option value="EMA">EMA</option>
+          <option value="RSI">RSI</option>
+          {side === "right" && <option value="VALUE">고정값</option>}
+        </select>
+        {operand.type === "VALUE" ? (
+          <input type="number" value={operand.value} onChange={(event) => onChange({ ...condition, [side]: { type: "VALUE", value: Number(event.target.value) } })} />
+        ) : ["SMA", "EMA", "RSI"].includes(operand.indicator) ? (
+          <input type="number" min="1" value={operand.period ?? 20} onChange={(event) => updatePeriod(side, Number(event.target.value))} />
+        ) : null}
+      </label>
+    );
+  };
+  return <div className="condition-fields">{renderOperand("left")}<label>연산자<select value={condition.operator} onChange={(event) => onChange({ ...condition, operator: event.target.value })}><option value="CROSS_ABOVE">상향 돌파</option><option value="CROSS_BELOW">하향 돌파</option><option value="GREATER_THAN">초과</option><option value="LESS_THAN">미만</option><option value="GREATER_THAN_OR_EQUAL">이상</option><option value="LESS_THAN_OR_EQUAL">이하</option><option value="EQUAL">같음</option></select></label>{renderOperand("right")}</div>;
+}
+
+function StrategyEditor({ strategy, onChange, onCancel, onSave, saving }: { strategy: Strategy; onChange: (strategy: Strategy) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
+  const update = (patch: Partial<Strategy>) => onChange({ ...strategy, ...patch } as Strategy);
+  const setCondition = (condition: Condition, kind: "entry" | "exit" | "switch") => {
+    if (kind === "switch" && isRegimeSwitch(strategy)) {
+      onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, condition } });
+    } else if (!isRegimeSwitch(strategy)) {
+      const key = kind === "entry" ? "entry_rules" : "exit_rules";
+      onChange({ ...strategy, [key]: { ...strategy[key], conditions: [condition, ...strategy[key].conditions.slice(1)] } });
+    }
+  };
+  return <section className="editor-card"><div><span className="panel-kicker">EDIT STRATEGY</span><h2>전략 초안 수정</h2><p>폼에서 값과 조건을 수정합니다. 저장 시 서버가 전략 규칙을 다시 검증합니다.</p></div><div className="strategy-form"><label>전략 이름<input value={strategy.strategy_name} onChange={(event) => update({ strategy_name: event.target.value })} /></label><label>시작일<input type="date" value={strategy.period.start_date} onChange={(event) => update({ period: { ...strategy.period, start_date: event.target.value } })} /></label><label>종료일<input type="date" value={strategy.period.end_date} onChange={(event) => update({ period: { ...strategy.period, end_date: event.target.value } })} /></label><label>초기 자본<input type="number" min="1" value={strategy.capital.initial_cash} onChange={(event) => update({ capital: { ...strategy.capital, initial_cash: Number(event.target.value) } })} /></label><label>수수료율<input type="number" min="0" step="0.0001" value={strategy.costs.commission_rate} onChange={(event) => update({ costs: { ...strategy.costs, commission_rate: Number(event.target.value) } })} /></label></div>{isRegimeSwitch(strategy) ? <div className="switch-editor"><h3>자산 전환 규칙</h3><div className="strategy-form"><label>기본 보유 자산<select value={strategy.default_symbol} onChange={(event) => onChange({ ...strategy, default_symbol: event.target.value })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>신호 종목<select value={strategy.switch_rule.signal_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, signal_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>조건 충족 시 보유<select value={strategy.switch_rule.target_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, target_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label></div><ConditionFields condition={strategy.switch_rule.condition} onChange={(condition) => setCondition(condition, "switch")} /></div> : <div className="switch-editor"><h3>매수 조건</h3><ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} /><h3>매도 조건</h3><ConditionFields condition={strategy.exit_rules.conditions[0]} onChange={(condition) => setCondition(condition, "exit")} /></div>}<div className="editor-actions"><button className="cancel-button" onClick={onCancel} disabled={saving}>취소</button><button className="save-button" onClick={onSave} disabled={saving}>{saving ? "검증 및 저장 중..." : "변경 검증 후 저장"}</button></div></section>;
 }
 
 function linePath(points: EquityPoint[], min: number, span: number) {
@@ -645,16 +715,7 @@ function LibraryView({
                       {new Date(version.confirmed_at).toLocaleString("ko-KR")}
                     </span>
                     <strong>{version.strategy.strategy_name}</strong>
-                    <p>
-                      {version.strategy.entry_rules.conditions
-                        .map(conditionLabel)
-                        .join(" / ")}
-                    </p>
-                    <p>
-                      {version.strategy.exit_rules.conditions
-                        .map(conditionLabel)
-                        .join(" / ")}
-                    </p>
+                    <p>{strategyRuleSummary(version.strategy)}</p>
                     <button
                       className="clone-button"
                       onClick={() => clone(version)}
@@ -749,10 +810,11 @@ function DraftView({
 }: {
   draft: StrategyDraft;
   onBack: () => void;
-  onRun: (data: OHLCVBar[]) => Promise<void>;
+  onRun: (request: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]> }) => Promise<void>;
   onUpdate: (strategy: Strategy) => Promise<void>;
 }) {
   const [data, setData] = useState<OHLCVBar[]>(makeDemoData);
+  const [dataBySymbol, setDataBySymbol] = useState<Record<string, OHLCVBar[]>>({});
   const [source, setSource] = useState("데모 데이터 220일");
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
@@ -761,11 +823,13 @@ function DraftView({
   );
   const [loadingFmp, setLoadingFmp] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [strategyText, setStrategyText] = useState(() =>
-    JSON.stringify(draft.strategy, null, 2),
-  );
+  const [editedStrategy, setEditedStrategy] = useState<Strategy>(draft.strategy);
   const [saving, setSaving] = useState(false);
   async function selectCsv(event: ChangeEvent<HTMLInputElement>) {
+    if (isRegimeSwitch(draft.strategy)) {
+      setError("자산 전환 전략은 두 종목의 날짜를 맞춰야 하므로 현재 FMP 데이터 불러오기를 사용하세요.");
+      return;
+    }
     const file = event.target.files?.[0];
     if (!file) return;
     try {
@@ -780,25 +844,28 @@ function DraftView({
     }
   }
   async function loadFmp() {
-    const symbol = fmpSymbol.trim().toUpperCase();
-    if (!symbol) {
+    const symbols = isRegimeSwitch(draft.strategy)
+      ? draft.strategy.universe.symbols
+      : [fmpSymbol.trim().toUpperCase()];
+    if (symbols.some((symbol) => !symbol)) {
       setError("FMP 종목코드를 입력하세요. 예: AAPL, NVDA, MSFT");
       return;
     }
     setLoadingFmp(true);
     setError("");
     try {
-      const result = await fetchDailyOhlcv({
-        provider: "FMP",
-        symbol,
-        start_date: draft.strategy.period.start_date,
-        end_date: draft.strategy.period.end_date,
-        adjusted_price: draft.strategy.data.adjusted_price,
-      });
-      setData(result.data);
-      setSource(
-        `FMP · ${result.symbol} · ${result.data_points}개 캔들 · ${result.adjustment}`,
-      );
+      const results = await Promise.all(symbols.map((symbol) => fetchDailyOhlcv({
+        provider: "FMP", symbol, start_date: draft.strategy.period.start_date,
+        end_date: draft.strategy.period.end_date, adjusted_price: draft.strategy.data.adjusted_price,
+      })));
+      if (isRegimeSwitch(draft.strategy)) {
+        setDataBySymbol(Object.fromEntries(results.map((result) => [result.symbol, result.data])));
+        setSource(`FMP · ${results.map((result) => `${result.symbol} ${result.data_points}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
+      } else {
+        const [result] = results;
+        setData(result.data);
+        setSource(`FMP · ${result.symbol} · ${result.data_points}개 캔들 · ${result.adjustment}`);
+      }
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -813,7 +880,7 @@ function DraftView({
     setRunning(true);
     setError("");
     try {
-      await onRun(data);
+      await onRun(isRegimeSwitch(draft.strategy) ? { data_by_symbol: dataBySymbol } : { data });
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -827,8 +894,7 @@ function DraftView({
     setSaving(true);
     setError("");
     try {
-      const strategy = JSON.parse(strategyText) as Strategy;
-      await onUpdate(strategy);
+      await onUpdate(editedStrategy);
       setEditing(false);
     } catch (caught) {
       setError(
@@ -841,7 +907,7 @@ function DraftView({
     }
   }
   function cancelEdit() {
-    setStrategyText(JSON.stringify(draft.strategy, null, 2));
+    setEditedStrategy(draft.strategy);
     setEditing(false);
     setError("");
   }
@@ -866,7 +932,7 @@ function DraftView({
         <article className="paper-card strategy-card">
           <div className="draft-heading">
             <span className="panel-kicker">STRATEGY DRAFT</span>
-            <button className="edit-button" onClick={() => setEditing(true)}>
+            <button className="edit-button" onClick={() => { setEditedStrategy(draft.strategy); setEditing(true); }}>
               초안 수정
             </button>
           </div>
@@ -877,18 +943,7 @@ function DraftView({
             {draft.strategy.period.start_date} ~{" "}
             {draft.strategy.period.end_date}
           </p>
-          <div className="rule-block">
-            <span>매수 조건</span>
-            {draft.strategy.entry_rules.conditions.map((condition, index) => (
-              <strong key={index}>{conditionLabel(condition)}</strong>
-            ))}
-          </div>
-          <div className="rule-block exit">
-            <span>매도 조건</span>
-            {draft.strategy.exit_rules.conditions.map((condition, index) => (
-              <strong key={index}>{conditionLabel(condition)}</strong>
-            ))}
-          </div>
+          {isRegimeSwitch(draft.strategy) ? <><div className="rule-block"><span>기본 보유</span><strong>{draft.strategy.default_symbol} 100%</strong></div><div className="rule-block exit"><span>전환 조건</span><strong>{draft.strategy.switch_rule.signal_symbol} {conditionLabel(draft.strategy.switch_rule.condition)} → {draft.strategy.switch_rule.target_symbol} 100%</strong></div></> : <><div className="rule-block"><span>매수 조건</span>{draft.strategy.entry_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div><div className="rule-block exit"><span>매도 조건</span>{draft.strategy.exit_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div></>}
           <p className="capital-line">
             초기 자본{" "}
             <strong>
@@ -929,40 +984,7 @@ function DraftView({
           )}
         </aside>
       </section>
-      {editing && (
-        <section className="editor-card">
-          <div>
-            <span className="panel-kicker">EDIT STRATEGY</span>
-            <h2>전략 초안 수정</h2>
-            <p>
-              기간, 초기자본, 조건, 거래비용 등을 JSON으로 수정하세요. 저장 시
-              서버가 Schema 규칙을 다시 검증합니다.
-            </p>
-          </div>
-          <textarea
-            aria-label="전략 JSON"
-            value={strategyText}
-            onChange={(event) => setStrategyText(event.target.value)}
-            spellCheck="false"
-          />
-          <div className="editor-actions">
-            <button
-              className="cancel-button"
-              onClick={cancelEdit}
-              disabled={saving}
-            >
-              취소
-            </button>
-            <button
-              className="save-button"
-              onClick={saveStrategy}
-              disabled={saving}
-            >
-              {saving ? "검증 및 저장 중..." : "변경 검증 후 저장"}
-            </button>
-          </div>
-        </section>
-      )}
+      {editing && <StrategyEditor strategy={editedStrategy} onChange={setEditedStrategy} onCancel={cancelEdit} onSave={saveStrategy} saving={saving} />}
       <section className="data-card">
         <div>
           <span className="panel-kicker">MARKET DATA</span>
@@ -991,23 +1013,23 @@ function DraftView({
               {loadingFmp ? "FMP 조회 중..." : "FMP에서 불러오기"}
             </button>
           </div>
-          <label className="file-button">
-            CSV 선택
-            <input type="file" accept=".csv,text/csv" onChange={selectCsv} />
-          </label>
+          {!isRegimeSwitch(draft.strategy) && <label className="file-button">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>}
         </div>
       </section>
       {error && <p className="error workflow-error">{error}</p>}
+      {draft.needs_clarification && <p className="error workflow-error">이 초안은 자산 전환 의도가 확정되지 않아 실행할 수 없습니다. 초안 수정에서 전환 자산과 조건을 지정하세요.</p>}
       <button
         className="run-button"
         onClick={submit}
-        disabled={running || editing}
+        disabled={running || editing || draft.needs_clarification}
       >
         {running
           ? "전략 확정 및 실행 중..."
           : editing
             ? "수정을 저장한 뒤 실행하세요"
-            : `${data.length}개 캔들로 전략 확정 및 실행`}
+            : isRegimeSwitch(draft.strategy)
+              ? `${Object.values(dataBySymbol).reduce((count, bars) => count + bars.length, 0)}개 종목별 캔들로 자산 전환 실행`
+              : `${data.length}개 캔들로 전략 확정 및 실행`}
       </button>
     </main>
   );
@@ -1040,10 +1062,10 @@ export default function App() {
       setLoading(false);
     }
   }
-  async function execute(data: OHLCVBar[]) {
+  async function execute(requestBody: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]> }) {
     if (!draft) return;
     await confirmDraft(draft.draft_id);
-    const next = await runDraftBacktest(draft.draft_id, data);
+    const next = await runDraftBacktest(draft.draft_id, requestBody);
     setResult(next);
     window.history.replaceState(null, "", `?backtestId=${next.backtest_id}`);
   }

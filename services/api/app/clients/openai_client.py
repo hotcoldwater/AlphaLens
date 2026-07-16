@@ -25,6 +25,11 @@ Rules:
 - Default market is KRX, daily timeframe, adjusted prices, and KRW only when the
   user does not specify a market or a US stock.
 - The result is a draft only. It must always require user confirmation before execution.
+- For a two-asset full-allocation switch such as "when SPY is below SMA 30, hold GLD",
+  return strategy_type REGIME_SWITCH with exactly two symbols, default_symbol, and switch_rule.
+- Do not rewrite an unsupported multi-asset, portfolio, or allocation request as a cash or
+  single-stock strategy. Instead, return the closest safe draft only when representable and
+  clearly add the unsupported intent to warnings and missing_fields.
 - If the request cannot be represented by the schema, explain it in warnings and use no unsupported feature.
 """
 

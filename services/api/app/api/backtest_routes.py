@@ -14,6 +14,7 @@ from ..schemas.backtest_schema import (
 from ..services.backtest_service import execute_backtest
 from ..services.backtest_explanation_service import BacktestExplanationService
 from ..services.backtest_store import backtest_store
+from ..schemas.strategy_schema import RegimeSwitchStrategy
 
 router = APIRouter(prefix="/api/v1/backtests", tags=["backtests"])
 explanation_service = BacktestExplanationService()
@@ -50,7 +51,11 @@ def _to_response(
         data_start_date=result.data_version.start_date,
         data_end_date=result.data_version.end_date,
         data_points=result.data_version.point_count,
-        benchmark_name="Same-data Buy & Hold",
+        benchmark_name=(
+            f"Same-data Buy & Hold ({request.strategy.default_symbol})"
+            if isinstance(request.strategy, RegimeSwitchStrategy)
+            else "Same-data Buy & Hold"
+        ),
         benchmark_total_return=result.benchmark_total_return,
         benchmark_max_drawdown=result.benchmark_max_drawdown,
         benchmark_equity_curve=[
@@ -81,6 +86,7 @@ def _to_response(
                 pnl=trade.pnl,
                 return_rate=trade.return_rate,
                 holding_days=trade.holding_days,
+                symbol=trade.symbol,
             )
             for trade in result.result.trades
         ],

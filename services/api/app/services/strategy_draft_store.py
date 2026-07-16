@@ -16,7 +16,7 @@ from ..schemas.strategy_parse_schema import (
     StrategyVersionListResponse,
     StrategyVersionResponse,
 )
-from ..schemas.strategy_schema import Strategy
+from ..schemas.strategy_schema import StrategyDefinition, validate_strategy_definition
 
 
 class StrategyDraftStore:
@@ -30,7 +30,7 @@ class StrategyDraftStore:
         draft_id = str(uuid4())
         draft = StrategyDraftResponse(
             draft_id=draft_id,
-            status=StrategyStatus.READY_TO_CONFIRM,
+            status=(StrategyStatus.NEEDS_INPUT if result.needs_clarification else StrategyStatus.READY_TO_CONFIRM),
             raw_input=raw_input,
             **result.model_dump(),
         )
@@ -39,8 +39,8 @@ class StrategyDraftStore:
                 """
                 INSERT INTO strategy_drafts
                 (draft_id, raw_input, strategy_json, status, missing_fields_json,
-                 assumptions_json, warnings_json, needs_confirmation)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 assumptions_json, warnings_json, needs_confirmation, needs_clarification)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     draft.draft_id,
@@ -51,6 +51,7 @@ class StrategyDraftStore:
                     json.dumps(draft.assumptions),
                     json.dumps(draft.warnings),
                     int(draft.needs_confirmation),
+                    int(draft.needs_clarification),
                 ),
             )
         return draft
@@ -64,11 +65,11 @@ class StrategyDraftStore:
             raise HTTPException(status_code=404, detail="strategy draft not found")
         return _draft_from_row(row)
 
-    def update(self, draft_id: str, strategy: Strategy) -> StrategyDraftResponse:
+    def update(self, draft_id: str, strategy: StrategyDefinition) -> StrategyDraftResponse:
         draft = self.get(draft_id)
         with self._lock, connect() as connection:
             connection.execute(
-                "UPDATE strategy_drafts SET strategy_json = ?, status = ?, needs_confirmation = 1 WHERE draft_id = ?",
+                "UPDATE strategy_drafts SET strategy_json = ?, status = ?, needs_confirmation = 1, needs_clarification = 0 WHERE draft_id = ?",
                 (json.dumps(strategy.model_dump(mode="json")), StrategyStatus.READY_TO_CONFIRM.value, draft_id),
             )
         return self.get(draft_id)
@@ -124,7 +125,7 @@ class StrategyDraftStore:
                     version=row["version"],
                     draft_id=row["draft_id"],
                     confirmed_at=row["confirmed_at"],
-                    strategy=Strategy.model_validate(json.loads(row["strategy_json"])),
+                    strategy=validate_strategy_definition(json.loads(row["strategy_json"])),
                 )
                 for row in rows
             ],
@@ -152,7 +153,7 @@ class StrategyDraftStore:
                     strategy_id=row["strategy_id"],
                     latest_version=row["version"],
                     confirmed_at=row["confirmed_at"],
-                    strategy=Strategy.model_validate(json.loads(row["strategy_json"])),
+                    strategy=validate_strategy_definition(json.loads(row["strategy_json"])),
                 )
                 for row in rows
             ]
@@ -167,7 +168,7 @@ class StrategyDraftStore:
             ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="strategy version not found")
-        strategy = Strategy.model_validate(json.loads(row["strategy_json"]))
+        strategy = validate_strategy_definition(json.loads(row["strategy_json"]))
         result = StrategyParseResult(
             strategy=strategy,
             assumptions=[f"{strategy_id}의 확정 버전 {version}을 새 초안으로 복제했습니다."],
@@ -187,7 +188,7 @@ def _draft_from_row(row: object) -> StrategyDraftResponse:
     return StrategyDraftResponse(
         draft_id=row["draft_id"],
         raw_input=row["raw_input"],
-        strategy=Strategy.model_validate(json.loads(row["strategy_json"])),
+        strategy=validate_strategy_definition(json.loads(row["strategy_json"])),
         status=StrategyStatus(row["status"]),
         strategy_id=row["strategy_id"],
         strategy_version=row["strategy_version"],
@@ -195,6 +196,7 @@ def _draft_from_row(row: object) -> StrategyDraftResponse:
         assumptions=json.loads(row["assumptions_json"]),
         warnings=json.loads(row["warnings_json"]),
         needs_confirmation=bool(row["needs_confirmation"]),
+        needs_clarification=bool(row["needs_clarification"]),
     )
 
 

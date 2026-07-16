@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import ValidationError
 
-from ..schemas.strategy_schema import Strategy
+from ..schemas.strategy_schema import validate_strategy_definition
 from ..schemas.backtest_schema import StrategyValidationResponse
 from ..schemas.backtest_schema import StrategyBacktestListResponse
 from ..services.backtest_store import backtest_store
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
 @router.post("/validate", response_model=StrategyValidationResponse)
 def validate_strategy(payload: dict[str, Any]) -> StrategyValidationResponse:
     try:
-        Strategy.model_validate(payload)
+        validate_strategy_definition(payload)
     except ValidationError as error:
         errors = [
             {"type": item["type"], "loc": list(item["loc"]), "msg": item["msg"]}

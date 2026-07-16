@@ -2,6 +2,7 @@ import pytest
 
 from services.api.app.api import strategy_draft_routes
 from services.api.app.clients.openai_client import OpenAIClientError, OpenAIStrategyClient
+from services.api.app.services.strategy_parser_service import StrategyParserService
 from services.api.app.enums import BacktestStatus
 from services.api.app.schemas.backtest_explanation_schema import BacktestExplanation
 from services.api.app.schemas.backtest_schema import BacktestResponse
@@ -64,6 +65,19 @@ def test_openai_client_returns_safe_error_type_when_parsing_fails():
 
     with pytest.raises(OpenAIClientError, match=r"RuntimeError\)"):
         client.parse_strategy("전략")
+
+
+def test_parser_does_not_silently_replace_asset_switch_with_cash_strategy():
+    class SingleStockClient:
+        def parse_strategy(self, raw_input: str) -> StrategyParseResult:
+            return parsed_result()
+
+    result = StrategyParserService(client=SingleStockClient()).parse(
+        "SPY가 30일 SMA 아래면 GLD로 전환해줘"
+    )
+
+    assert result.needs_clarification is True
+    assert any("자동 변경하지 않습니다" in warning for warning in result.warnings)
 
 
 def test_openai_client_explains_fixed_result_with_structured_output():

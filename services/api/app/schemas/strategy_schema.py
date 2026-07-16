@@ -63,6 +63,22 @@ class Universe(BaseModel):
     symbols: Annotated[list[str], Field(min_length=1, max_length=1)]
 
 
+class SwitchUniverse(BaseModel):
+    """A deliberately limited, two-asset universe for full allocation switches."""
+
+    model_config = ConfigDict(extra="forbid")
+    type: UniverseType = UniverseType.REGIME_SWITCH
+    symbols: Annotated[list[str], Field(min_length=2, max_length=2)]
+
+    @model_validator(mode="after")
+    def validate_distinct_symbols(self) -> "SwitchUniverse":
+        normalized = [symbol.upper() for symbol in self.symbols]
+        if len(set(normalized)) != 2:
+            raise ValueError("REGIME_SWITCH requires two distinct symbols")
+        self.symbols = normalized
+        return self
+
+
 class Period(BaseModel):
     model_config = ConfigDict(extra="forbid")
     start_date: date
@@ -125,6 +141,7 @@ class Capital(BaseModel):
 
 class Strategy(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    strategy_type: str = Field(default="SINGLE_STOCK", pattern="^SINGLE_STOCK$")
     strategy_name: str = Field(min_length=1)
     market: str = "KRX"
     universe: Universe
@@ -138,3 +155,67 @@ class Strategy(BaseModel):
     costs: Costs = Costs()
     capital: Capital
     benchmark: str | None = None
+
+
+class RegimeSwitchRule(BaseModel):
+    """When the signal is true, move the full portfolio to target_symbol."""
+
+    model_config = ConfigDict(extra="forbid")
+    signal_symbol: str = Field(min_length=1, max_length=32)
+    condition: Condition
+    target_symbol: str = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def normalize_symbols(self) -> "RegimeSwitchRule":
+        self.signal_symbol = self.signal_symbol.upper()
+        self.target_symbol = self.target_symbol.upper()
+        return self
+
+
+class RegimeSwitchStrategy(BaseModel):
+    """Two-asset, long-only, full-allocation regime switching strategy.
+
+    The default asset is held unless the signal condition is true. Conditions are
+    evaluated using signal_symbol at the close and filled at the next common open.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    strategy_type: str = Field(default="REGIME_SWITCH", pattern="^REGIME_SWITCH$")
+    strategy_name: str = Field(min_length=1)
+    market: str = "NASDAQ"
+    universe: SwitchUniverse
+    period: Period
+    data: DataConfig = DataConfig()
+    default_symbol: str = Field(min_length=1, max_length=32)
+    switch_rule: RegimeSwitchRule
+    execution: ExecutionConfig = ExecutionConfig()
+    costs: Costs = Costs()
+    capital: Capital
+    benchmark: str | None = None
+
+    @model_validator(mode="after")
+    def validate_symbols(self) -> "RegimeSwitchStrategy":
+        symbols = set(self.universe.symbols)
+        self.default_symbol = self.default_symbol.upper()
+        if self.default_symbol not in symbols:
+            raise ValueError("default_symbol must be in universe.symbols")
+        if self.switch_rule.signal_symbol not in symbols:
+            raise ValueError("switch_rule.signal_symbol must be in universe.symbols")
+        if self.switch_rule.target_symbol not in symbols:
+            raise ValueError("switch_rule.target_symbol must be in universe.symbols")
+        if self.switch_rule.target_symbol == self.default_symbol:
+            raise ValueError("switch_rule.target_symbol must differ from default_symbol")
+        return self
+
+
+StrategyDefinition = Union[Strategy, RegimeSwitchStrategy]
+
+
+def validate_strategy_definition(payload: object) -> StrategyDefinition:
+    """Keep V1 JSON compatible while routing explicit V2 requests safely."""
+
+    if isinstance(payload, RegimeSwitchStrategy | Strategy):
+        return payload
+    if isinstance(payload, dict) and payload.get("strategy_type") == "REGIME_SWITCH":
+        return RegimeSwitchStrategy.model_validate(payload)
+    return Strategy.model_validate(payload)

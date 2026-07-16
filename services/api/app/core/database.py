@@ -30,6 +30,7 @@ def initialize_schema() -> None:
                 assumptions_json TEXT NOT NULL,
                 warnings_json TEXT NOT NULL,
                 needs_confirmation INTEGER NOT NULL,
+                needs_clarification INTEGER NOT NULL DEFAULT 0,
                 strategy_id TEXT,
                 strategy_version INTEGER
             );
@@ -54,6 +55,7 @@ def initialize_schema() -> None:
         )
         _add_column_if_missing(connection, "strategy_drafts", "strategy_id TEXT")
         _add_column_if_missing(connection, "strategy_drafts", "strategy_version INTEGER")
+        _add_column_if_missing(connection, "strategy_drafts", "needs_clarification INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(connection, "backtest_runs", "data_version TEXT NOT NULL DEFAULT 'unversioned'")
         _add_column_if_missing(connection, "backtest_runs", "strategy_id TEXT")
         _add_column_if_missing(connection, "backtest_runs", "strategy_version INTEGER")

@@ -52,7 +52,11 @@ def backtest_confirmed_draft(
     if draft.status.value != "CONFIRMED":
         raise HTTPException(status_code=409, detail="strategy must be confirmed before backtest")
     return _to_response(
-        BacktestRequest(strategy=draft.strategy, data=request.data),
+        BacktestRequest(
+            strategy=draft.strategy,
+            data=request.data,
+            data_by_symbol=request.data_by_symbol,
+        ),
         strategy_id=draft.strategy_id,
         strategy_version=draft.strategy_version,
     )

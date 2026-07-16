@@ -20,6 +20,7 @@ class Trade:
     pnl: float
     return_rate: float
     holding_days: int
+    symbol: str | None = None
 
 
 @dataclass
@@ -121,6 +122,7 @@ def run_backtest(
                     pnl=gross - exit_cost - invested,
                     return_rate=(gross - exit_cost - invested) / invested,
                     holding_days=(index - entry_date).days,
+                    symbol=strategy.universe.symbols[0],
                 )
             )
             quantity = 0

@@ -306,6 +306,47 @@ button:disabled {
   font-size: 14px;
   line-height: 1.65;
 }
+
+.strategy-form,
+.condition-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 18px;
+}
+
+.strategy-form label,
+.condition-fields label {
+  color: #536b60;
+  display: grid;
+  font-size: 0.78rem;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.strategy-form input,
+.strategy-form select,
+.condition-fields input,
+.condition-fields select {
+  background: #fffdf6;
+  border: 1px solid #b8c7ae;
+  color: #183d34;
+  font: inherit;
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+.switch-editor {
+  border-top: 1px solid #cbd5c2;
+  margin-top: 22px;
+  padding-top: 16px;
+}
+
+.switch-editor h3 {
+  color: #315b4c;
+  font-size: 0.95rem;
+  margin: 14px 0 0;
+}
 .editor-card textarea {
   min-height: 420px;
   padding: 16px;

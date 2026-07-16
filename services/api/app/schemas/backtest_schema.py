@@ -1,9 +1,9 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .strategy_schema import Strategy
+from .strategy_schema import RegimeSwitchStrategy, Strategy, StrategyDefinition
 from ..enums import BacktestStatus
 
 
@@ -42,8 +42,25 @@ class MarketDataFetchResponse(BaseModel):
 
 class BacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    strategy: Strategy
-    data: Annotated[list[OHLCVBar], Field(min_length=1)]
+    strategy: StrategyDefinition
+    data: list[OHLCVBar] | None = None
+    data_by_symbol: dict[str, Annotated[list[OHLCVBar], Field(min_length=1)]] | None = None
+
+    @model_validator(mode="after")
+    def validate_data_shape(self) -> "BacktestRequest":
+        if isinstance(self.strategy, RegimeSwitchStrategy):
+            if not self.data_by_symbol:
+                raise ValueError("REGIME_SWITCH requires data_by_symbol")
+            expected = set(self.strategy.universe.symbols)
+            actual = {symbol.upper() for symbol in self.data_by_symbol}
+            if actual != expected:
+                raise ValueError("data_by_symbol must contain exactly the strategy universe symbols")
+            return self
+        if not self.data:
+            raise ValueError("single-stock strategy requires data")
+        if self.data_by_symbol is not None:
+            raise ValueError("single-stock strategy does not accept data_by_symbol")
+        return self
 
 
 class TradeResponse(BaseModel):
@@ -58,6 +75,7 @@ class TradeResponse(BaseModel):
     pnl: float
     return_rate: float
     holding_days: int
+    symbol: str | None = None
 
 
 class EquityPoint(BaseModel):

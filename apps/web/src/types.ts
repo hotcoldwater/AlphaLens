@@ -86,7 +86,8 @@ export type Condition = {
   right: IndicatorReference | ValueReference;
 };
 
-export type Strategy = {
+export type SingleStockStrategy = {
+  strategy_type: "SINGLE_STOCK";
   strategy_name: string;
   market: string;
   universe: { type: string; symbols: string[] };
@@ -106,6 +107,27 @@ export type Strategy = {
   benchmark: string | null;
 };
 
+export type RegimeSwitchStrategy = {
+  strategy_type: "REGIME_SWITCH";
+  strategy_name: string;
+  market: string;
+  universe: { type: "REGIME_SWITCH"; symbols: [string, string] };
+  period: { start_date: string; end_date: string };
+  data: { timeframe: string; adjusted_price: boolean };
+  default_symbol: string;
+  switch_rule: {
+    signal_symbol: string;
+    condition: Condition;
+    target_symbol: string;
+  };
+  execution: { signal_time: string; execution_time: string };
+  costs: { commission_rate: number; slippage_rate: number; tax_rate: number };
+  capital: { initial_cash: number; currency: string };
+  benchmark: string | null;
+};
+
+export type Strategy = SingleStockStrategy | RegimeSwitchStrategy;
+
 export type StrategyDraft = {
   draft_id: string;
   status: string;
@@ -115,6 +137,7 @@ export type StrategyDraft = {
   assumptions: string[];
   warnings: string[];
   needs_confirmation: boolean;
+  needs_clarification: boolean;
 };
 
 export type StrategyVersion = {

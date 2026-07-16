@@ -8,6 +8,7 @@ class LogicType(StrEnum):
 
 class UniverseType(StrEnum):
     SINGLE_STOCK = "SINGLE_STOCK"
+    REGIME_SWITCH = "REGIME_SWITCH"
 
 
 class DataTimeframe(StrEnum):
