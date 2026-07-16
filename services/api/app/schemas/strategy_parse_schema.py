@@ -51,6 +51,17 @@ class StrategyVersionListResponse(BaseModel):
     versions: list[StrategyVersionResponse]
 
 
+class StrategyLibraryItem(BaseModel):
+    strategy_id: str
+    latest_version: int
+    confirmed_at: str
+    strategy: Strategy
+
+
+class StrategyLibraryResponse(BaseModel):
+    strategies: list[StrategyLibraryItem]
+
+
 class DraftBacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     data: Annotated[list["OHLCVBar"], Field(min_length=1)]

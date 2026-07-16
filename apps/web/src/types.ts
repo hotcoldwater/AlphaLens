@@ -100,3 +100,18 @@ export type StrategyDraft = {
   warnings: string[];
   needs_confirmation: boolean;
 };
+
+export type StrategyVersion = {
+  strategy_id: string;
+  version: number;
+  draft_id: string;
+  confirmed_at: string;
+  strategy: Strategy;
+};
+
+export type StrategyLibraryItem = {
+  strategy_id: string;
+  latest_version: number;
+  confirmed_at: string;
+  strategy: Strategy;
+};

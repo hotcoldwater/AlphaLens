@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from ..schemas.strategy_schema import Strategy
 from ..schemas.backtest_schema import StrategyValidationResponse
-from ..schemas.strategy_parse_schema import StrategyVersionListResponse
+from ..schemas.strategy_parse_schema import StrategyLibraryResponse, StrategyVersionListResponse
 from ..services.strategy_draft_store import strategy_draft_store
 
 router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
@@ -22,6 +22,11 @@ def validate_strategy(payload: dict[str, Any]) -> StrategyValidationResponse:
         ]
         return StrategyValidationResponse(valid=False, errors=errors)
     return StrategyValidationResponse(valid=True)
+
+
+@router.get("", response_model=StrategyLibraryResponse)
+def list_strategies() -> StrategyLibraryResponse:
+    return strategy_draft_store.list_strategies()
 
 
 @router.get("/{strategy_id}/versions", response_model=StrategyVersionListResponse)

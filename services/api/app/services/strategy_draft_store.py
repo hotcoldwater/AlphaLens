@@ -11,6 +11,8 @@ from ..schemas.strategy_parse_schema import (
     ConfirmedStrategyResponse,
     StrategyDraftResponse,
     StrategyParseResult,
+    StrategyLibraryItem,
+    StrategyLibraryResponse,
     StrategyVersionListResponse,
     StrategyVersionResponse,
 )
@@ -121,6 +123,34 @@ class StrategyDraftStore:
                 )
                 for row in rows
             ],
+        )
+
+    def list_strategies(self) -> StrategyLibraryResponse:
+        """Return one card per strategy, using its latest confirmed version."""
+        with connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT versions.* FROM strategy_versions AS versions
+                INNER JOIN (
+                    SELECT strategy_id, MAX(version) AS latest_version
+                    FROM strategy_versions
+                    GROUP BY strategy_id
+                ) AS latest
+                ON versions.strategy_id = latest.strategy_id
+                AND versions.version = latest.latest_version
+                ORDER BY versions.confirmed_at DESC
+                """
+            ).fetchall()
+        return StrategyLibraryResponse(
+            strategies=[
+                StrategyLibraryItem(
+                    strategy_id=row["strategy_id"],
+                    latest_version=row["version"],
+                    confirmed_at=row["confirmed_at"],
+                    strategy=Strategy.model_validate(json.loads(row["strategy_json"])),
+                )
+                for row in rows
+            ]
         )
 
 

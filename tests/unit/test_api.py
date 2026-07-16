@@ -164,6 +164,9 @@ def test_draft_requires_confirmation_before_backtest(monkeypatch):
     versions = client.get(f"/api/v1/strategies/{strategy_id}/versions")
     assert versions.status_code == 200
     assert versions.json()["versions"][0]["version"] == 1
+    library = client.get("/api/v1/strategies")
+    assert library.status_code == 200
+    assert any(item["strategy_id"] == strategy_id for item in library.json()["strategies"])
 
     executed = client.post(
         f"/api/v1/strategy-drafts/{draft_id}/backtest",
