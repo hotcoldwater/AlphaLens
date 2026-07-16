@@ -38,6 +38,19 @@ class ConfirmedStrategyResponse(BaseModel):
     strategy: Strategy
 
 
+class StrategyVersionResponse(BaseModel):
+    strategy_id: str
+    version: int
+    draft_id: str
+    confirmed_at: str
+    strategy: Strategy
+
+
+class StrategyVersionListResponse(BaseModel):
+    strategy_id: str
+    versions: list[StrategyVersionResponse]
+
+
 class DraftBacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     data: Annotated[list["OHLCVBar"], Field(min_length=1)]

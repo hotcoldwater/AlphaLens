@@ -11,6 +11,8 @@ from ..schemas.strategy_parse_schema import (
     ConfirmedStrategyResponse,
     StrategyDraftResponse,
     StrategyParseResult,
+    StrategyVersionListResponse,
+    StrategyVersionResponse,
 )
 from ..schemas.strategy_schema import Strategy
 
@@ -97,6 +99,28 @@ class StrategyDraftStore:
             version=1,
             status=StrategyStatus.CONFIRMED,
             strategy=draft.strategy,
+        )
+
+    def versions(self, strategy_id: str) -> StrategyVersionListResponse:
+        with connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM strategy_versions WHERE strategy_id = ? ORDER BY version",
+                (strategy_id,),
+            ).fetchall()
+        if not rows:
+            raise HTTPException(status_code=404, detail="strategy not found")
+        return StrategyVersionListResponse(
+            strategy_id=strategy_id,
+            versions=[
+                StrategyVersionResponse(
+                    strategy_id=row["strategy_id"],
+                    version=row["version"],
+                    draft_id=row["draft_id"],
+                    confirmed_at=row["confirmed_at"],
+                    strategy=Strategy.model_validate(json.loads(row["strategy_json"])),
+                )
+                for row in rows
+            ],
         )
 
 
