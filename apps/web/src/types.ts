@@ -31,3 +31,50 @@ export type BacktestResult = {
   trades: Trade[];
   equity_curve: EquityPoint[];
 };
+
+export type OHLCVBar = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+export type IndicatorReference = {
+  type: "INDICATOR";
+  indicator: string;
+  period?: number | null;
+};
+
+export type ValueReference = {
+  type: "VALUE";
+  value: number;
+};
+
+export type Condition = {
+  left: IndicatorReference | ValueReference;
+  operator: string;
+  right: IndicatorReference | ValueReference;
+};
+
+export type Strategy = {
+  strategy_name: string;
+  market: string;
+  universe: { type: string; symbols: string[] };
+  period: { start_date: string; end_date: string };
+  entry_rules: { logic: string; conditions: Condition[] };
+  exit_rules: { logic: string; conditions: Condition[] };
+  capital: { initial_cash: number; currency: string };
+};
+
+export type StrategyDraft = {
+  draft_id: string;
+  status: string;
+  raw_input: string;
+  strategy: Strategy;
+  missing_fields: string[];
+  assumptions: string[];
+  warnings: string[];
+  needs_confirmation: boolean;
+};
