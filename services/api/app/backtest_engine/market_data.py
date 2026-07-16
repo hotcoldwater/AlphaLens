@@ -11,7 +11,12 @@ def load_ohlcv(path: str | Path) -> pd.DataFrame:
     if path.suffix.lower() == ".csv":
         data = pd.read_csv(path)
     elif path.suffix.lower() == ".parquet":
-        data = pd.read_parquet(path)
+        try:
+            data = pd.read_parquet(path)
+        except ImportError as error:
+            raise ValueError(
+                "Parquet support requires the optional requirements-parquet.txt dependencies"
+            ) from error
     else:
         raise ValueError("market data must be a .csv or .parquet file")
 
