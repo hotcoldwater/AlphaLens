@@ -1,4 +1,5 @@
 import os
+from datetime import date
 
 from openai import OpenAI
 
@@ -35,10 +36,14 @@ class OpenAIStrategyClient:
         if self._client is None:
             self._client = OpenAI(api_key=self.api_key)
         try:
+            system_prompt = (
+                f"{SYSTEM_PROMPT}\n"
+                f"Today's date is {date.today().isoformat()}. Use this date when the user says 'today', 'now', or 'until present'."
+            )
             response = self._client.responses.parse(
                 model=self.model,
                 input=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": raw_input},
                 ],
                 text_format=StrategyParseResult,

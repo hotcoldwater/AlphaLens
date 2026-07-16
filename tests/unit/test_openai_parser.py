@@ -34,6 +34,7 @@ def test_openai_client_uses_pydantic_structured_output():
     assert result.strategy.strategy_name == "Sample SMA strategy"
     assert responses.calls[0]["model"] == "test-model"
     assert responses.calls[0]["text_format"] is StrategyParseResult
+    assert "Today's date is " in responses.calls[0]["input"][0]["content"]
 
 
 def test_openai_client_requires_api_key():
