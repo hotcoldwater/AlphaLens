@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from ..core.database import connect, initialize_schema
+from ..core.database import connect, execute, initialize_schema
 from ..enums import StrategyStatus
 from ..schemas.strategy_parse_schema import (
     ConfirmedStrategyResponse,
@@ -20,7 +20,7 @@ from ..schemas.strategy_schema import StrategyDefinition, validate_strategy_defi
 
 
 class StrategyDraftStore:
-    """SQLite-backed draft and strategy-version store."""
+    """Durable draft and strategy-version store for SQLite or PostgreSQL."""
 
     def __init__(self) -> None:
         initialize_schema()
@@ -35,7 +35,8 @@ class StrategyDraftStore:
             **result.model_dump(),
         )
         with self._lock, connect() as connection:
-            connection.execute(
+            execute(
+                connection,
                 """
                 INSERT INTO strategy_drafts
                 (draft_id, raw_input, strategy_json, status, missing_fields_json,
@@ -58,7 +59,8 @@ class StrategyDraftStore:
 
     def get(self, draft_id: str) -> StrategyDraftResponse:
         with connect() as connection:
-            row = connection.execute(
+            row = execute(
+                connection,
                 "SELECT * FROM strategy_drafts WHERE draft_id = ?", (draft_id,)
             ).fetchone()
         if row is None:
@@ -68,7 +70,8 @@ class StrategyDraftStore:
     def update(self, draft_id: str, strategy: StrategyDefinition) -> StrategyDraftResponse:
         draft = self.get(draft_id)
         with self._lock, connect() as connection:
-            connection.execute(
+            execute(
+                connection,
                 "UPDATE strategy_drafts SET strategy_json = ?, status = ?, needs_confirmation = 1, needs_clarification = 0 WHERE draft_id = ?",
                 (json.dumps(strategy.model_dump(mode="json")), StrategyStatus.READY_TO_CONFIRM.value, draft_id),
             )
@@ -80,15 +83,18 @@ class StrategyDraftStore:
             raise HTTPException(status_code=409, detail="strategy draft is not awaiting confirmation")
         with self._lock, connect() as connection:
             strategy_id = draft.strategy_id or str(uuid4())
-            version = connection.execute(
-                "SELECT COALESCE(MAX(version), 0) + 1 FROM strategy_versions WHERE strategy_id = ?",
+            version = execute(
+                connection,
+                "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM strategy_versions WHERE strategy_id = ?",
                 (strategy_id,),
-            ).fetchone()[0]
-            connection.execute(
+            ).fetchone()["next_version"]
+            execute(
+                connection,
                 "UPDATE strategy_drafts SET status = ?, needs_confirmation = 0, strategy_id = ?, strategy_version = ? WHERE draft_id = ?",
                 (StrategyStatus.CONFIRMED.value, strategy_id, version, draft_id),
             )
-            connection.execute(
+            execute(
+                connection,
                 """
                 INSERT INTO strategy_versions
                 (strategy_id, version, draft_id, strategy_json, confirmed_at)
@@ -111,7 +117,8 @@ class StrategyDraftStore:
 
     def versions(self, strategy_id: str) -> StrategyVersionListResponse:
         with connect() as connection:
-            rows = connection.execute(
+            rows = execute(
+                connection,
                 "SELECT * FROM strategy_versions WHERE strategy_id = ? ORDER BY version",
                 (strategy_id,),
             ).fetchall()
@@ -134,7 +141,8 @@ class StrategyDraftStore:
     def list_strategies(self) -> StrategyLibraryResponse:
         """Return one card per strategy, using its latest confirmed version."""
         with connect() as connection:
-            rows = connection.execute(
+            rows = execute(
+                connection,
                 """
                 SELECT versions.* FROM strategy_versions AS versions
                 INNER JOIN (
@@ -162,7 +170,8 @@ class StrategyDraftStore:
     def clone_version(self, strategy_id: str, version: int) -> StrategyDraftResponse:
         """Create a new unconfirmed draft from an immutable confirmed version."""
         with connect() as connection:
-            row = connection.execute(
+            row = execute(
+                connection,
                 "SELECT * FROM strategy_versions WHERE strategy_id = ? AND version = ?",
                 (strategy_id, version),
             ).fetchone()
@@ -177,7 +186,8 @@ class StrategyDraftStore:
         )
         cloned = self.create(f"Cloned strategy {strategy_id} version {version}", result)
         with self._lock, connect() as connection:
-            connection.execute(
+            execute(
+                connection,
                 "UPDATE strategy_drafts SET strategy_id = ? WHERE draft_id = ?",
                 (strategy_id, cloned.draft_id),
             )

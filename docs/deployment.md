@@ -19,18 +19,28 @@ or KRX keys to Pages because Vite exposes `VITE_*` variables to the browser.
 4. Copy the API origin, without a trailing slash.
 
 Free Render web services stop after inactivity and use an ephemeral filesystem.
-That means saved backtest results and cached OHLCV files disappear on a restart,
-redeploy, or spin-down. This mode is suitable only for a no-cost demonstration.
+Without a managed database, saved backtest results and cached OHLCV files disappear
+on a restart, redeploy, or spin-down. This mode is suitable only for a no-cost demonstration.
 
-## Persistent upgrade
+## Persistent database with Neon
 
-When preserving backtest history is needed, upgrade the Render service to a paid
-instance and add a disk at `/var/data` in **Settings > Disks**. The Docker image
-already writes SQLite and market-data cache files there, so no code change is
-needed. Set these environment variables after attaching the disk:
+The API supports managed PostgreSQL through `DATABASE_URL`. For Neon, create the
+database in the same region as the Render API, then copy the **pooled** connection
+string into Render as `DATABASE_URL`. Do not put this value in Cloudflare Pages or
+commit it to `.env.example`.
+
+On startup, AlphaLens creates the strategy drafts, immutable strategy versions, and
+backtest run tables automatically. Render's ephemeral filesystem can still be used
+for temporary market-data cache files because persisted strategy and run history now
+lives in PostgreSQL.
+
+## Persistent local cache
+
+For a durable local market-data cache, upgrade the Render service to a paid instance
+and add a disk at `/var/data` in **Settings > Disks**. Set this environment variable
+after attaching the disk:
 
 ```text
-ALPHALENS_DATABASE_PATH=/var/data/alphalens.db
 ALPHALENS_MARKET_DATA_PATH=/var/data/market_data
 ```
 

@@ -5,12 +5,12 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from ..core.database import connect, initialize_schema
+from ..core.database import connect, execute, initialize_schema
 from ..schemas.backtest_schema import BacktestResponse, BacktestRunSummary, StrategyBacktestListResponse
 
 
 class BacktestStore:
-    """SQLite-backed backtest result store."""
+    """Durable backtest result store for SQLite or PostgreSQL."""
 
     def __init__(self) -> None:
         initialize_schema()
@@ -20,7 +20,8 @@ class BacktestStore:
         backtest_id = str(uuid4())
         saved = response.model_copy(update={"backtest_id": backtest_id})
         with self._lock, connect() as connection:
-            connection.execute(
+            execute(
+                connection,
                 "INSERT INTO backtest_runs (backtest_id, status, data_version, strategy_id, strategy_version, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     backtest_id,
@@ -36,7 +37,8 @@ class BacktestStore:
 
     def get(self, backtest_id: str) -> BacktestResponse:
         with connect() as connection:
-            row = connection.execute(
+            row = execute(
+                connection,
                 "SELECT result_json FROM backtest_runs WHERE backtest_id = ?", (backtest_id,)
             ).fetchone()
         if row is None:
@@ -45,7 +47,8 @@ class BacktestStore:
 
     def list_for_strategy(self, strategy_id: str) -> StrategyBacktestListResponse:
         with connect() as connection:
-            rows = connection.execute(
+            rows = execute(
+                connection,
                 "SELECT * FROM backtest_runs WHERE strategy_id = ? ORDER BY created_at DESC",
                 (strategy_id,),
             ).fetchall()
