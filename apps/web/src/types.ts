@@ -126,7 +126,22 @@ export type RegimeSwitchStrategy = {
   benchmark: string | null;
 };
 
-export type Strategy = SingleStockStrategy | RegimeSwitchStrategy;
+export type AllocationRebalanceStrategy = {
+  strategy_type: "ALLOCATION_REBALANCE";
+  strategy_name: string;
+  market: string;
+  universe: { type: "ALLOCATION_REBALANCE"; symbols: string[] };
+  period: { start_date: string; end_date: string };
+  data: { timeframe: string; adjusted_price: boolean };
+  target_allocations: { symbol: string; weight: number }[];
+  rebalance: { frequency: "MONTHLY" };
+  execution: { signal_time: string; execution_time: string };
+  costs: { commission_rate: number; slippage_rate: number; tax_rate: number };
+  capital: { initial_cash: number; currency: string };
+  benchmark: string | null;
+};
+
+export type Strategy = SingleStockStrategy | RegimeSwitchStrategy | AllocationRebalanceStrategy;
 
 export type StrategyDraft = {
   draft_id: string;

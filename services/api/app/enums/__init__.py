@@ -7,12 +7,13 @@ from .strategy_types import (
     ExecutionTime,
     LogicType,
     PositionSizingMethod,
+    RebalanceFrequency,
     SignalTime,
     UniverseType,
 )
 
 __all__ = [
     "BacktestStatus", "DataTimeframe", "ExecutionTime", "IndicatorType", "LogicType",
-    "OperatorType", "PositionSizingMethod", "SignalTime", "StrategyStatus",
+    "OperatorType", "PositionSizingMethod", "RebalanceFrequency", "SignalTime", "StrategyStatus",
     "UniverseType",
 ]

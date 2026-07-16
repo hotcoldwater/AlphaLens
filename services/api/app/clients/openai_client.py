@@ -27,6 +27,9 @@ Rules:
 - The result is a draft only. It must always require user confirmation before execution.
 - For a two-asset full-allocation switch such as "when SPY is below SMA 30, hold GLD",
   return strategy_type REGIME_SWITCH with exactly two symbols, default_symbol, and switch_rule.
+- For a fixed multi-asset allocation request such as "hold SPY 60% and GLD 40%, rebalanced monthly",
+  return strategy_type ALLOCATION_REBALANCE with 2 to 5 symbols, target_allocations whose weights
+  sum to 1 or less, and rebalance frequency MONTHLY. Unallocated weight remains cash.
 - Do not rewrite an unsupported multi-asset, portfolio, or allocation request as a cash or
   single-stock strategy. Instead, return the closest safe draft only when representable and
   clearly add the unsupported intent to warnings and missing_fields.

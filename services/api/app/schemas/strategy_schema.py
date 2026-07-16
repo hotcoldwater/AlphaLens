@@ -10,6 +10,7 @@ from ..enums import (
     LogicType,
     OperatorType,
     PositionSizingMethod,
+    RebalanceFrequency,
     SignalTime,
     UniverseType,
 )
@@ -76,6 +77,19 @@ class SwitchUniverse(BaseModel):
         if len(set(normalized)) != 2:
             raise ValueError("REGIME_SWITCH requires two distinct symbols")
         self.symbols = normalized
+        return self
+
+
+class AllocationUniverse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: UniverseType = UniverseType.ALLOCATION_REBALANCE
+    symbols: Annotated[list[str], Field(min_length=2, max_length=5)]
+
+    @model_validator(mode="after")
+    def validate_distinct_symbols(self) -> "AllocationUniverse":
+        self.symbols = [symbol.upper() for symbol in self.symbols]
+        if len(set(self.symbols)) != len(self.symbols):
+            raise ValueError("ALLOCATION_REBALANCE requires distinct symbols")
         return self
 
 
@@ -208,14 +222,62 @@ class RegimeSwitchStrategy(BaseModel):
         return self
 
 
-StrategyDefinition = Union[Strategy, RegimeSwitchStrategy]
+class TargetAllocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    symbol: str = Field(min_length=1, max_length=32)
+    weight: float = Field(gt=0, le=1)
+
+    @model_validator(mode="after")
+    def normalize_symbol(self) -> "TargetAllocation":
+        self.symbol = self.symbol.upper()
+        return self
+
+
+class RebalanceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    frequency: RebalanceFrequency = RebalanceFrequency.MONTHLY
+
+
+class AllocationRebalanceStrategy(BaseModel):
+    """Long-only fixed target weights, rebalanced at the first common session monthly."""
+
+    model_config = ConfigDict(extra="forbid")
+    strategy_type: str = Field(default="ALLOCATION_REBALANCE", pattern="^ALLOCATION_REBALANCE$")
+    strategy_name: str = Field(min_length=1)
+    market: str = "NASDAQ"
+    universe: AllocationUniverse
+    period: Period
+    data: DataConfig = DataConfig()
+    target_allocations: Annotated[list[TargetAllocation], Field(min_length=2, max_length=5)]
+    rebalance: RebalanceConfig = RebalanceConfig()
+    execution: ExecutionConfig = ExecutionConfig()
+    costs: Costs = Costs()
+    capital: Capital
+    benchmark: str | None = None
+
+    @model_validator(mode="after")
+    def validate_allocations(self) -> "AllocationRebalanceStrategy":
+        symbols = set(self.universe.symbols)
+        allocation_symbols = [allocation.symbol for allocation in self.target_allocations]
+        if set(allocation_symbols) != symbols:
+            raise ValueError("target_allocations must contain every universe symbol exactly once")
+        if len(set(allocation_symbols)) != len(allocation_symbols):
+            raise ValueError("target_allocations must not repeat symbols")
+        if sum(allocation.weight for allocation in self.target_allocations) > 1 + 1e-9:
+            raise ValueError("target allocation weights must sum to 1 or less")
+        return self
+
+
+StrategyDefinition = Union[Strategy, RegimeSwitchStrategy, AllocationRebalanceStrategy]
 
 
 def validate_strategy_definition(payload: object) -> StrategyDefinition:
     """Keep V1 JSON compatible while routing explicit V2 requests safely."""
 
-    if isinstance(payload, RegimeSwitchStrategy | Strategy):
+    if isinstance(payload, RegimeSwitchStrategy | AllocationRebalanceStrategy | Strategy):
         return payload
     if isinstance(payload, dict) and payload.get("strategy_type") == "REGIME_SWITCH":
         return RegimeSwitchStrategy.model_validate(payload)
+    if isinstance(payload, dict) and payload.get("strategy_type") == "ALLOCATION_REBALANCE":
+        return AllocationRebalanceStrategy.model_validate(payload)
     return Strategy.model_validate(payload)

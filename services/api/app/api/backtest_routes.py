@@ -14,7 +14,7 @@ from ..schemas.backtest_schema import (
 from ..services.backtest_service import execute_backtest
 from ..services.backtest_explanation_service import BacktestExplanationService
 from ..services.backtest_store import backtest_store
-from ..schemas.strategy_schema import RegimeSwitchStrategy
+from ..schemas.strategy_schema import AllocationRebalanceStrategy, RegimeSwitchStrategy
 
 router = APIRouter(prefix="/api/v1/backtests", tags=["backtests"])
 explanation_service = BacktestExplanationService()
@@ -54,6 +54,8 @@ def _to_response(
         benchmark_name=(
             f"Same-data Buy & Hold ({request.strategy.default_symbol})"
             if isinstance(request.strategy, RegimeSwitchStrategy)
+            else f"Same-data Buy & Hold ({request.strategy.target_allocations[0].symbol})"
+            if isinstance(request.strategy, AllocationRebalanceStrategy)
             else "Same-data Buy & Hold"
         ),
         benchmark_total_return=result.benchmark_total_return,

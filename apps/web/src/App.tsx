@@ -16,6 +16,7 @@ import type {
   BacktestExplanation,
   BacktestResult,
   BacktestRunSummary,
+  AllocationRebalanceStrategy,
   Condition,
   EquityPoint,
   OHLCVBar,
@@ -110,9 +111,20 @@ function isRegimeSwitch(strategy: Strategy): strategy is RegimeSwitchStrategy {
   return strategy.strategy_type === "REGIME_SWITCH";
 }
 
+function isAllocationRebalance(strategy: Strategy): strategy is AllocationRebalanceStrategy {
+  return strategy.strategy_type === "ALLOCATION_REBALANCE";
+}
+
+function isMultiAsset(strategy: Strategy) {
+  return isRegimeSwitch(strategy) || isAllocationRebalance(strategy);
+}
+
 function strategyRuleSummary(strategy: Strategy) {
   if (isRegimeSwitch(strategy)) {
     return `${strategy.switch_rule.signal_symbol}: ${conditionLabel(strategy.switch_rule.condition)} → ${strategy.switch_rule.target_symbol}`;
+  }
+  if (isAllocationRebalance(strategy)) {
+    return `${strategy.target_allocations.map((item) => `${item.symbol} ${(item.weight * 100).toFixed(0)}%`).join(" / ")} · 월간 리밸런싱`;
   }
   return `${strategy.entry_rules.conditions.map(conditionLabel).join(" / ")} | ${strategy.exit_rules.conditions.map(conditionLabel).join(" / ")}`;
 }
@@ -165,14 +177,17 @@ function ConditionFields({
 function StrategyEditor({ strategy, onChange, onCancel, onSave, saving }: { strategy: Strategy; onChange: (strategy: Strategy) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
   const update = (patch: Partial<Strategy>) => onChange({ ...strategy, ...patch } as Strategy);
   const setCondition = (condition: Condition, kind: "entry" | "exit" | "switch") => {
-    if (kind === "switch" && isRegimeSwitch(strategy)) {
-      onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, condition } });
-    } else if (!isRegimeSwitch(strategy)) {
+    if (kind === "switch" && isRegimeSwitch(strategy)) onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, condition } });
+    else if (!isMultiAsset(strategy)) {
       const key = kind === "entry" ? "entry_rules" : "exit_rules";
       onChange({ ...strategy, [key]: { ...strategy[key], conditions: [condition, ...strategy[key].conditions.slice(1)] } });
     }
   };
-  return <section className="editor-card"><div><span className="panel-kicker">EDIT STRATEGY</span><h2>전략 초안 수정</h2><p>폼에서 값과 조건을 수정합니다. 저장 시 서버가 전략 규칙을 다시 검증합니다.</p></div><div className="strategy-form"><label>전략 이름<input value={strategy.strategy_name} onChange={(event) => update({ strategy_name: event.target.value })} /></label><label>시작일<input type="date" value={strategy.period.start_date} onChange={(event) => update({ period: { ...strategy.period, start_date: event.target.value } })} /></label><label>종료일<input type="date" value={strategy.period.end_date} onChange={(event) => update({ period: { ...strategy.period, end_date: event.target.value } })} /></label><label>초기 자본<input type="number" min="1" value={strategy.capital.initial_cash} onChange={(event) => update({ capital: { ...strategy.capital, initial_cash: Number(event.target.value) } })} /></label><label>수수료율<input type="number" min="0" step="0.0001" value={strategy.costs.commission_rate} onChange={(event) => update({ costs: { ...strategy.costs, commission_rate: Number(event.target.value) } })} /></label></div>{isRegimeSwitch(strategy) ? <div className="switch-editor"><h3>자산 전환 규칙</h3><div className="strategy-form"><label>기본 보유 자산<select value={strategy.default_symbol} onChange={(event) => onChange({ ...strategy, default_symbol: event.target.value })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>신호 종목<select value={strategy.switch_rule.signal_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, signal_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>조건 충족 시 보유<select value={strategy.switch_rule.target_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, target_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label></div><ConditionFields condition={strategy.switch_rule.condition} onChange={(condition) => setCondition(condition, "switch")} /></div> : <div className="switch-editor"><h3>매수 조건</h3><ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} /><h3>매도 조건</h3><ConditionFields condition={strategy.exit_rules.conditions[0]} onChange={(condition) => setCondition(condition, "exit")} /></div>}<div className="editor-actions"><button className="cancel-button" onClick={onCancel} disabled={saving}>취소</button><button className="save-button" onClick={onSave} disabled={saving}>{saving ? "검증 및 저장 중..." : "변경 검증 후 저장"}</button></div></section>;
+  const updateWeight = (symbol: string, weight: number) => {
+    if (!isAllocationRebalance(strategy)) return;
+    onChange({ ...strategy, target_allocations: strategy.target_allocations.map((item) => item.symbol === symbol ? { ...item, weight } : item) });
+  };
+  return <section className="editor-card"><div><span className="panel-kicker">EDIT STRATEGY</span><h2>전략 초안 수정</h2><p>폼에서 값과 조건을 수정합니다. 저장 시 서버가 전략 규칙을 다시 검증합니다.</p></div><div className="strategy-form"><label>전략 이름<input value={strategy.strategy_name} onChange={(event) => update({ strategy_name: event.target.value })} /></label><label>시작일<input type="date" value={strategy.period.start_date} onChange={(event) => update({ period: { ...strategy.period, start_date: event.target.value } })} /></label><label>종료일<input type="date" value={strategy.period.end_date} onChange={(event) => update({ period: { ...strategy.period, end_date: event.target.value } })} /></label><label>초기 자본<input type="number" min="1" value={strategy.capital.initial_cash} onChange={(event) => update({ capital: { ...strategy.capital, initial_cash: Number(event.target.value) } })} /></label><label>수수료율<input type="number" min="0" step="0.0001" value={strategy.costs.commission_rate} onChange={(event) => update({ costs: { ...strategy.costs, commission_rate: Number(event.target.value) } })} /></label></div>{isRegimeSwitch(strategy) ? <div className="switch-editor"><h3>자산 전환 규칙</h3><div className="strategy-form"><label>기본 보유 자산<select value={strategy.default_symbol} onChange={(event) => onChange({ ...strategy, default_symbol: event.target.value })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>신호 종목<select value={strategy.switch_rule.signal_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, signal_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>조건 충족 시 보유<select value={strategy.switch_rule.target_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, target_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label></div><ConditionFields condition={strategy.switch_rule.condition} onChange={(condition) => setCondition(condition, "switch")} /></div> : isAllocationRebalance(strategy) ? <div className="switch-editor"><h3>목표 비중과 월간 리밸런싱</h3><div className="strategy-form">{strategy.target_allocations.map((item) => <label key={item.symbol}>{item.symbol} 비중<input type="number" min="0.01" max="1" step="0.01" value={item.weight} onChange={(event) => updateWeight(item.symbol, Number(event.target.value))} /></label>)}</div><p>비중 합계가 100%보다 작으면 나머지는 현금으로 유지합니다. 매월 첫 공통 거래일 시가에 리밸런싱합니다.</p></div> : <div className="switch-editor"><h3>매수 조건</h3><ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} /><h3>매도 조건</h3><ConditionFields condition={strategy.exit_rules.conditions[0]} onChange={(condition) => setCondition(condition, "exit")} /></div>}<div className="editor-actions"><button className="cancel-button" onClick={onCancel} disabled={saving}>취소</button><button className="save-button" onClick={onSave} disabled={saving}>{saving ? "검증 및 저장 중..." : "변경 검증 후 저장"}</button></div></section>;
 }
 
 function linePath(points: EquityPoint[], min: number, span: number) {
@@ -826,7 +841,7 @@ function DraftView({
   const [editedStrategy, setEditedStrategy] = useState<Strategy>(draft.strategy);
   const [saving, setSaving] = useState(false);
   async function selectCsv(event: ChangeEvent<HTMLInputElement>) {
-    if (isRegimeSwitch(draft.strategy)) {
+    if (isMultiAsset(draft.strategy)) {
       setError("자산 전환 전략은 두 종목의 날짜를 맞춰야 하므로 현재 FMP 데이터 불러오기를 사용하세요.");
       return;
     }
@@ -844,7 +859,7 @@ function DraftView({
     }
   }
   async function loadFmp() {
-    const symbols = isRegimeSwitch(draft.strategy)
+    const symbols = isMultiAsset(draft.strategy)
       ? draft.strategy.universe.symbols
       : [fmpSymbol.trim().toUpperCase()];
     if (symbols.some((symbol) => !symbol)) {
@@ -858,7 +873,7 @@ function DraftView({
         provider: "FMP", symbol, start_date: draft.strategy.period.start_date,
         end_date: draft.strategy.period.end_date, adjusted_price: draft.strategy.data.adjusted_price,
       })));
-      if (isRegimeSwitch(draft.strategy)) {
+      if (isMultiAsset(draft.strategy)) {
         setDataBySymbol(Object.fromEntries(results.map((result) => [result.symbol, result.data])));
         setSource(`FMP · ${results.map((result) => `${result.symbol} ${result.data_points}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
       } else {
@@ -880,7 +895,7 @@ function DraftView({
     setRunning(true);
     setError("");
     try {
-      await onRun(isRegimeSwitch(draft.strategy) ? { data_by_symbol: dataBySymbol } : { data });
+      await onRun(isMultiAsset(draft.strategy) ? { data_by_symbol: dataBySymbol } : { data });
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -943,7 +958,7 @@ function DraftView({
             {draft.strategy.period.start_date} ~{" "}
             {draft.strategy.period.end_date}
           </p>
-          {isRegimeSwitch(draft.strategy) ? <><div className="rule-block"><span>기본 보유</span><strong>{draft.strategy.default_symbol} 100%</strong></div><div className="rule-block exit"><span>전환 조건</span><strong>{draft.strategy.switch_rule.signal_symbol} {conditionLabel(draft.strategy.switch_rule.condition)} → {draft.strategy.switch_rule.target_symbol} 100%</strong></div></> : <><div className="rule-block"><span>매수 조건</span>{draft.strategy.entry_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div><div className="rule-block exit"><span>매도 조건</span>{draft.strategy.exit_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div></>}
+          {isRegimeSwitch(draft.strategy) ? <><div className="rule-block"><span>기본 보유</span><strong>{draft.strategy.default_symbol} 100%</strong></div><div className="rule-block exit"><span>전환 조건</span><strong>{draft.strategy.switch_rule.signal_symbol} {conditionLabel(draft.strategy.switch_rule.condition)} → {draft.strategy.switch_rule.target_symbol} 100%</strong></div></> : isAllocationRebalance(draft.strategy) ? <><div className="rule-block"><span>목표 비중</span><strong>{draft.strategy.target_allocations.map((item) => `${item.symbol} ${(item.weight * 100).toFixed(0)}%`).join(" / ")}</strong></div><div className="rule-block exit"><span>리밸런싱</span><strong>매월 첫 공통 거래일 시가</strong></div></> : <><div className="rule-block"><span>매수 조건</span>{draft.strategy.entry_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div><div className="rule-block exit"><span>매도 조건</span>{draft.strategy.exit_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div></>}
           <p className="capital-line">
             초기 자본{" "}
             <strong>
@@ -1013,7 +1028,7 @@ function DraftView({
               {loadingFmp ? "FMP 조회 중..." : "FMP에서 불러오기"}
             </button>
           </div>
-          {!isRegimeSwitch(draft.strategy) && <label className="file-button">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>}
+          {!isMultiAsset(draft.strategy) && <label className="file-button">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>}
         </div>
       </section>
       {error && <p className="error workflow-error">{error}</p>}
@@ -1027,7 +1042,7 @@ function DraftView({
           ? "전략 확정 및 실행 중..."
           : editing
             ? "수정을 저장한 뒤 실행하세요"
-            : isRegimeSwitch(draft.strategy)
+            : isMultiAsset(draft.strategy)
               ? `${Object.values(dataBySymbol).reduce((count, bars) => count + bars.length, 0)}개 종목별 캔들로 자산 전환 실행`
               : `${data.length}개 캔들로 전략 확정 및 실행`}
       </button>

@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .strategy_schema import RegimeSwitchStrategy, Strategy, StrategyDefinition
+from .strategy_schema import AllocationRebalanceStrategy, RegimeSwitchStrategy, Strategy, StrategyDefinition
 from ..enums import BacktestStatus
 
 
@@ -48,9 +48,9 @@ class BacktestRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_data_shape(self) -> "BacktestRequest":
-        if isinstance(self.strategy, RegimeSwitchStrategy):
+        if isinstance(self.strategy, RegimeSwitchStrategy | AllocationRebalanceStrategy):
             if not self.data_by_symbol:
-                raise ValueError("REGIME_SWITCH requires data_by_symbol")
+                raise ValueError("multi-asset strategy requires data_by_symbol")
             expected = set(self.strategy.universe.symbols)
             actual = {symbol.upper() for symbol in self.data_by_symbol}
             if actual != expected:
