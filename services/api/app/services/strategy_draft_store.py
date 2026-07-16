@@ -153,6 +153,24 @@ class StrategyDraftStore:
             ]
         )
 
+    def clone_version(self, strategy_id: str, version: int) -> StrategyDraftResponse:
+        """Create a new unconfirmed draft from an immutable confirmed version."""
+        with connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM strategy_versions WHERE strategy_id = ? AND version = ?",
+                (strategy_id, version),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="strategy version not found")
+        strategy = Strategy.model_validate(json.loads(row["strategy_json"]))
+        result = StrategyParseResult(
+            strategy=strategy,
+            assumptions=[f"{strategy_id}의 확정 버전 {version}을 새 초안으로 복제했습니다."],
+            warnings=["복제본은 별도 전략으로 저장됩니다. 실행 전에 조건과 비용을 다시 확인하세요."],
+            needs_confirmation=True,
+        )
+        return self.create(f"Cloned strategy {strategy_id} version {version}", result)
+
 
 def _draft_from_row(row: object) -> StrategyDraftResponse:
     return StrategyDraftResponse(

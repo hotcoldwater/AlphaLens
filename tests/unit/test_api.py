@@ -167,6 +167,10 @@ def test_draft_requires_confirmation_before_backtest(monkeypatch):
     library = client.get("/api/v1/strategies")
     assert library.status_code == 200
     assert any(item["strategy_id"] == strategy_id for item in library.json()["strategies"])
+    clone = client.post(f"/api/v1/strategies/{strategy_id}/versions/1/clone")
+    assert clone.status_code == 200
+    assert clone.json()["status"] == "READY_TO_CONFIRM"
+    assert clone.json()["strategy"] == confirmed.json()["strategy"]
 
     executed = client.post(
         f"/api/v1/strategy-drafts/{draft_id}/backtest",

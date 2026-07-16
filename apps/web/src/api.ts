@@ -61,3 +61,7 @@ export async function getStrategyVersions(strategyId: string): Promise<StrategyV
   const response = await request<{ versions: StrategyVersion[] }>(`/api/v1/strategies/${encodeURIComponent(strategyId)}/versions`);
   return response.versions;
 }
+
+export function cloneStrategyVersion(strategyId: string, version: number): Promise<StrategyDraft> {
+  return request(`/api/v1/strategies/${encodeURIComponent(strategyId)}/versions/${version}/clone`, { method: "POST" });
+}
