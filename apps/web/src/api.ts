@@ -1,4 +1,4 @@
-import type { BacktestExplanation, BacktestResult, OHLCVBar, Strategy, StrategyDraft, StrategyLibraryItem, StrategyVersion } from "./types";
+import type { BacktestExplanation, BacktestResult, BacktestRunSummary, OHLCVBar, Strategy, StrategyDraft, StrategyLibraryItem, StrategyVersion } from "./types";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -64,4 +64,9 @@ export async function getStrategyVersions(strategyId: string): Promise<StrategyV
 
 export function cloneStrategyVersion(strategyId: string, version: number): Promise<StrategyDraft> {
   return request(`/api/v1/strategies/${encodeURIComponent(strategyId)}/versions/${version}/clone`, { method: "POST" });
+}
+
+export async function getStrategyBacktests(strategyId: string): Promise<BacktestRunSummary[]> {
+  const response = await request<{ runs: BacktestRunSummary[] }>(`/api/v1/strategies/${encodeURIComponent(strategyId)}/backtests`);
+  return response.runs;
 }

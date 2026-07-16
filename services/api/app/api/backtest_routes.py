@@ -5,8 +5,10 @@ from ..enums import BacktestStatus
 from ..schemas.backtest_explanation_schema import BacktestExplanation
 from ..schemas.backtest_schema import (
     BacktestRequest,
+    BacktestRunSummary,
     BacktestResponse,
     EquityPoint,
+    StrategyBacktestListResponse,
     TradeResponse,
 )
 from ..services.backtest_service import execute_backtest
@@ -27,7 +29,12 @@ def create_backtest(request: BacktestRequest) -> BacktestResponse:
     return _to_response(request, result)
 
 
-def _to_response(request: BacktestRequest, result=None) -> BacktestResponse:
+def _to_response(
+    request: BacktestRequest,
+    result=None,
+    strategy_id: str | None = None,
+    strategy_version: int | None = None,
+) -> BacktestResponse:
     if result is None:
         try:
             result = execute_backtest(request)
@@ -36,6 +43,8 @@ def _to_response(request: BacktestRequest, result=None) -> BacktestResponse:
     response = BacktestResponse(
         backtest_id="pending",
         status=BacktestStatus.SUCCEEDED,
+        strategy_id=strategy_id,
+        strategy_version=strategy_version,
         data_version=result.data_version.identifier,
         data_start_date=result.data_version.start_date,
         data_end_date=result.data_version.end_date,

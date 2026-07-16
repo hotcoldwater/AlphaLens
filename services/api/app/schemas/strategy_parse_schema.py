@@ -24,6 +24,8 @@ class StrategyDraftResponse(StrategyParseResult):
     draft_id: str
     status: StrategyStatus
     raw_input: str
+    strategy_id: str | None = None
+    strategy_version: int | None = None
 
 
 class StrategyDraftUpdate(BaseModel):

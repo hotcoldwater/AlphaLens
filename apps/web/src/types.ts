@@ -115,3 +115,19 @@ export type StrategyLibraryItem = {
   confirmed_at: string;
   strategy: Strategy;
 };
+
+export type BacktestRunSummary = {
+  backtest_id: string;
+  status: string;
+  strategy_version: number | null;
+  created_at: string;
+  data_version: string;
+  data_start_date: string | null;
+  data_end_date: string | null;
+  data_points: number;
+  total_return: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  final_equity: number;
+  trade_count: number;
+};

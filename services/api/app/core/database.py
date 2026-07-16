@@ -29,7 +29,9 @@ def initialize_schema() -> None:
                 missing_fields_json TEXT NOT NULL,
                 assumptions_json TEXT NOT NULL,
                 warnings_json TEXT NOT NULL,
-                needs_confirmation INTEGER NOT NULL
+                needs_confirmation INTEGER NOT NULL,
+                strategy_id TEXT,
+                strategy_version INTEGER
             );
             CREATE TABLE IF NOT EXISTS strategy_versions (
                 strategy_id TEXT NOT NULL,
@@ -43,13 +45,22 @@ def initialize_schema() -> None:
                 backtest_id TEXT PRIMARY KEY,
                 status TEXT NOT NULL,
                 data_version TEXT NOT NULL DEFAULT 'unversioned',
+                strategy_id TEXT,
+                strategy_version INTEGER,
                 result_json TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
             """
         )
-        columns = {row["name"] for row in connection.execute("PRAGMA table_info(backtest_runs)")}
-        if "data_version" not in columns:
-            connection.execute(
-                "ALTER TABLE backtest_runs ADD COLUMN data_version TEXT NOT NULL DEFAULT 'unversioned'"
-            )
+        _add_column_if_missing(connection, "strategy_drafts", "strategy_id TEXT")
+        _add_column_if_missing(connection, "strategy_drafts", "strategy_version INTEGER")
+        _add_column_if_missing(connection, "backtest_runs", "data_version TEXT NOT NULL DEFAULT 'unversioned'")
+        _add_column_if_missing(connection, "backtest_runs", "strategy_id TEXT")
+        _add_column_if_missing(connection, "backtest_runs", "strategy_version INTEGER")
+
+
+def _add_column_if_missing(connection: sqlite3.Connection, table: str, definition: str) -> None:
+    column = definition.split()[0]
+    columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")

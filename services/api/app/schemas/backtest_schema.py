@@ -45,6 +45,8 @@ class EquityPoint(BaseModel):
 class BacktestResponse(BaseModel):
     backtest_id: str
     status: BacktestStatus
+    strategy_id: str | None = None
+    strategy_version: int | None = None
     data_version: str = "unversioned"
     data_start_date: date | None = None
     data_end_date: date | None = None
@@ -67,6 +69,27 @@ class BacktestResponse(BaseModel):
     trade_count: int
     trades: list[TradeResponse]
     equity_curve: list[EquityPoint]
+
+
+class BacktestRunSummary(BaseModel):
+    backtest_id: str
+    status: BacktestStatus
+    strategy_version: int | None = None
+    created_at: str
+    data_version: str
+    data_start_date: date | None = None
+    data_end_date: date | None = None
+    data_points: int = 0
+    total_return: float
+    max_drawdown: float
+    sharpe_ratio: float
+    final_equity: float
+    trade_count: int
+
+
+class StrategyBacktestListResponse(BaseModel):
+    strategy_id: str
+    runs: list[BacktestRunSummary]
 
 
 class StrategyValidationResponse(BaseModel):

@@ -171,6 +171,10 @@ def test_draft_requires_confirmation_before_backtest(monkeypatch):
     assert clone.status_code == 200
     assert clone.json()["status"] == "READY_TO_CONFIRM"
     assert clone.json()["strategy"] == confirmed.json()["strategy"]
+    cloned_confirmation = client.post(f"/api/v1/strategy-drafts/{clone.json()['draft_id']}/confirm")
+    assert cloned_confirmation.status_code == 200
+    assert cloned_confirmation.json()["strategy_id"] == strategy_id
+    assert cloned_confirmation.json()["version"] == 2
 
     executed = client.post(
         f"/api/v1/strategy-drafts/{draft_id}/backtest",
@@ -178,3 +182,7 @@ def test_draft_requires_confirmation_before_backtest(monkeypatch):
     )
     assert executed.status_code == 200
     assert executed.json()["trade_count"] == 1
+    assert executed.json()["strategy_id"] == strategy_id
+    strategy_runs = client.get(f"/api/v1/strategies/{strategy_id}/backtests")
+    assert strategy_runs.status_code == 200
+    assert strategy_runs.json()["runs"][0]["backtest_id"] == executed.json()["backtest_id"]

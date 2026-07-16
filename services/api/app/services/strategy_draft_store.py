@@ -77,20 +77,25 @@ class StrategyDraftStore:
         draft = self.get(draft_id)
         if draft.status != StrategyStatus.READY_TO_CONFIRM:
             raise HTTPException(status_code=409, detail="strategy draft is not awaiting confirmation")
-        strategy_id = str(uuid4())
         with self._lock, connect() as connection:
+            strategy_id = draft.strategy_id or str(uuid4())
+            version = connection.execute(
+                "SELECT COALESCE(MAX(version), 0) + 1 FROM strategy_versions WHERE strategy_id = ?",
+                (strategy_id,),
+            ).fetchone()[0]
             connection.execute(
-                "UPDATE strategy_drafts SET status = ?, needs_confirmation = 0 WHERE draft_id = ?",
-                (StrategyStatus.CONFIRMED.value, draft_id),
+                "UPDATE strategy_drafts SET status = ?, needs_confirmation = 0, strategy_id = ?, strategy_version = ? WHERE draft_id = ?",
+                (StrategyStatus.CONFIRMED.value, strategy_id, version, draft_id),
             )
             connection.execute(
                 """
                 INSERT INTO strategy_versions
                 (strategy_id, version, draft_id, strategy_json, confirmed_at)
-                VALUES (?, 1, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     strategy_id,
+                    version,
                     draft_id,
                     json.dumps(draft.strategy.model_dump(mode="json")),
                     datetime.now(timezone.utc).isoformat(),
@@ -98,7 +103,7 @@ class StrategyDraftStore:
             )
         return ConfirmedStrategyResponse(
             strategy_id=strategy_id,
-            version=1,
+            version=version,
             status=StrategyStatus.CONFIRMED,
             strategy=draft.strategy,
         )
@@ -166,10 +171,16 @@ class StrategyDraftStore:
         result = StrategyParseResult(
             strategy=strategy,
             assumptions=[f"{strategy_id}의 확정 버전 {version}을 새 초안으로 복제했습니다."],
-            warnings=["복제본은 별도 전략으로 저장됩니다. 실행 전에 조건과 비용을 다시 확인하세요."],
+            warnings=["복제본은 원본 전략의 다음 버전으로 저장됩니다. 실행 전에 조건과 비용을 다시 확인하세요."],
             needs_confirmation=True,
         )
-        return self.create(f"Cloned strategy {strategy_id} version {version}", result)
+        cloned = self.create(f"Cloned strategy {strategy_id} version {version}", result)
+        with self._lock, connect() as connection:
+            connection.execute(
+                "UPDATE strategy_drafts SET strategy_id = ? WHERE draft_id = ?",
+                (strategy_id, cloned.draft_id),
+            )
+        return self.get(cloned.draft_id)
 
 
 def _draft_from_row(row: object) -> StrategyDraftResponse:
@@ -178,6 +189,8 @@ def _draft_from_row(row: object) -> StrategyDraftResponse:
         raw_input=row["raw_input"],
         strategy=Strategy.model_validate(json.loads(row["strategy_json"])),
         status=StrategyStatus(row["status"]),
+        strategy_id=row["strategy_id"],
+        strategy_version=row["strategy_version"],
         missing_fields=json.loads(row["missing_fields_json"]),
         assumptions=json.loads(row["assumptions_json"]),
         warnings=json.loads(row["warnings_json"]),
