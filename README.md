@@ -194,12 +194,13 @@ OR
 - Python
 - FastAPI
 - Pydantic
-- SQLAlchemy
+- psycopg 기반 PostgreSQL 연결
 
 ### Database
 
 - PostgreSQL
-- Supabase 사용 가능
+- Neon PostgreSQL 사용
+- 전략 초안, 전략 버전, 백테스트 실행 결과를 영속 저장
 
 ### Backtest Engine
 
@@ -211,8 +212,10 @@ OR
 ### Market Data
 
 - 일봉 OHLCV 데이터
-- Parquet 저장
-- 종목 메타데이터와 데이터 버전은 PostgreSQL 저장
+- FMP API를 통한 미국 주식 일봉 OHLCV 조회
+- CSV 업로드 지원
+- KRX 승인 후 KOSPI/KOSDAQ 데이터 공급원 추가 예정
+- 데이터 해시와 공급원 정보를 실행 결과에 저장
 
 ### AI
 
@@ -228,9 +231,43 @@ OR
 ### Deployment
 
 - Frontend: Cloudflare Pages
-- Backend: Render, Railway 또는 별도 Python 서버
-- Database: Supabase PostgreSQL
+- Backend: Render
+- Database: Neon PostgreSQL
 - CI/CD: GitHub Actions
+
+---
+
+## 4.1 현재 구현 현황과 확장 계획
+
+이 절은 최초 MVP 설계 이후 실제 구현된 범위와 후속 계획을 기록한다. 완료 표시는 배포와 테스트로 검증된 기능에만 사용한다.
+
+### 완료
+
+- 자연어 전략 입력을 OpenAI Structured Outputs로 제한된 Strategy Schema로 변환
+- 누락값, 가정값, 경고를 사용자 확인 전 표시하고 확정 전 자동 실행 금지
+- SMA, EMA, RSI, CROSS_ABOVE, CROSS_BELOW 기반 단일 종목 백테스트
+- 다음 거래일 시가 체결, 현금/보유수량, 수수료, 슬리피지, 손절/익절, 최대 보유기간 처리
+- 누적수익률, CAGR, MDD, 샤프 비율, 변동성, 승률, 거래 내역, Same-data Buy & Hold 비교
+- FMP 미국 주식 일봉 OHLCV 조회 및 CSV 데이터 업로드
+- 결과 화면, AI 결과 설명, 전략 보관함, 버전 조회, 실행 결과 비교
+- 2자산 국면 전환 전략과 월간 목표 비중 리밸런싱
+- Cloudflare Pages 프론트엔드, Render API, Neon PostgreSQL 배포
+- `strategy_drafts`, `strategy_versions`, `backtest_runs` PostgreSQL 영속화
+
+### 다음 우선순위
+
+1. PostgreSQL 실사용 검증: 실제 전략 생성, 확정, 실행 기록이 Neon에 저장되는지 확인한다.
+2. 전략 편집 UX: JSON 직접 편집을 폼 기반 조건/비용/위험관리/비중 편집기로 대체한다.
+3. 다중 자산 고도화: 조건별 목표 포트폴리오, 현금 비중, 리밸런싱 비용, 최소 주문 단위를 지원한다.
+4. 데이터 계층: FMP 캐시와 수집 이력을 저장하고, KRX 승인 후 KOSPI/KOSDAQ 데이터를 연결한다.
+5. 운영 안정성: DB 마이그레이션 체계, 중복 실행 방지, API 오류 표준화, 배포 통합 테스트를 추가한다.
+6. 사용자 계정: 전략 소유권과 사용자별 보관함이 필요한 시점에 인증을 도입한다.
+
+### 문서 관리 원칙
+
+- 구현 또는 배포가 끝난 기능은 이 절의 `완료`와 관련 Phase에 반영한다.
+- 아직 검증되지 않은 기능은 `다음 우선순위`에만 기록한다.
+- 데이터 공급원, 배포 환경, 보안 설정 등 운영 구조가 바뀌면 같은 변경에서 README도 함께 갱신한다.
 
 ---
 
