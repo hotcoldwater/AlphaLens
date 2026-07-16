@@ -9,6 +9,7 @@ from .api.backtest_routes import router as backtest_router
 from .api.market_data_routes import router as market_data_router
 from .api.strategy_routes import router as strategy_router
 from .api.strategy_draft_routes import router as strategy_draft_router
+from .core.database import using_postgres
 from .schemas.error_schema import ErrorResponse
 
 app = FastAPI(title="AlphaLens API", version="0.1.0")
@@ -62,4 +63,7 @@ async def http_exception_handler(request: Request, exception: HTTPException) -> 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "database_backend": "postgresql" if using_postgres() else "sqlite",
+    }
