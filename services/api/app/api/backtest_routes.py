@@ -45,6 +45,7 @@ def _to_response(
         status=BacktestStatus.SUCCEEDED,
         strategy_id=strategy_id,
         strategy_version=strategy_version,
+        currency=request.strategy.capital.currency,
         data_version=result.data_version.identifier,
         data_start_date=result.data_version.start_date,
         data_end_date=result.data_version.end_date,

@@ -53,6 +53,7 @@ def test_backtest_endpoint_runs_engine_and_returns_response_schema():
     assert response.status_code == 200
     backtest_id = body["backtest_id"]
     assert body["status"] == "SUCCEEDED"
+    assert body["currency"] == "KRW"
     assert body["trade_count"] == 1
     assert body["data_version"].startswith("sha256:")
     assert body["data_points"] == 4
@@ -71,6 +72,16 @@ def test_backtest_endpoint_runs_engine_and_returns_response_schema():
     assert result.status_code == 200
     assert result.json()["backtest_id"] == backtest_id
     assert result.json()["data_version"] == body["data_version"]
+
+
+def test_backtest_response_uses_strategy_currency():
+    strategy = api_strategy()
+    strategy["capital"]["currency"] = "USD"
+
+    response = client.post("/api/v1/backtests", json={"strategy": strategy, "data": bars()})
+
+    assert response.status_code == 200
+    assert response.json()["currency"] == "USD"
 
 
 def test_backtest_endpoint_is_reproducible_for_same_strategy_and_data():

@@ -56,6 +56,7 @@ class BacktestStore:
                     backtest_id=row["backtest_id"],
                     status=row["status"],
                     strategy_version=row["strategy_version"],
+                    currency=json.loads(row["result_json"]).get("currency", "KRW"),
                     created_at=row["created_at"],
                     data_version=row["data_version"],
                     **{

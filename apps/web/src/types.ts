@@ -16,6 +16,7 @@ export type EquityPoint = { date: string; equity: number };
 export type BacktestResult = {
   backtest_id: string;
   status: string;
+  currency: string;
   data_version: string;
   data_start_date: string | null;
   data_end_date: string | null;
@@ -94,7 +95,11 @@ export type Strategy = {
   entry_rules: { logic: string; conditions: Condition[] };
   exit_rules: { logic: string; conditions: Condition[] };
   position_sizing: { method: string; value: number | null };
-  risk_management: { stop_loss: number | null; take_profit: number | null; maximum_holding_days: number | null };
+  risk_management: {
+    stop_loss: number | null;
+    take_profit: number | null;
+    maximum_holding_days: number | null;
+  };
   execution: { signal_time: string; execution_time: string };
   costs: { commission_rate: number; slippage_rate: number; tax_rate: number };
   capital: { initial_cash: number; currency: string };
@@ -131,6 +136,7 @@ export type BacktestRunSummary = {
   backtest_id: string;
   status: string;
   strategy_version: number | null;
+  currency: string;
   created_at: string;
   data_version: string;
   data_start_date: string | null;

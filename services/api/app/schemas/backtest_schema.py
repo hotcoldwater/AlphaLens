@@ -70,6 +70,7 @@ class BacktestResponse(BaseModel):
     status: BacktestStatus
     strategy_id: str | None = None
     strategy_version: int | None = None
+    currency: str = "KRW"
     data_version: str = "unversioned"
     data_start_date: date | None = None
     data_end_date: date | None = None
@@ -98,6 +99,7 @@ class BacktestRunSummary(BaseModel):
     backtest_id: str
     status: BacktestStatus
     strategy_version: int | None = None
+    currency: str = "KRW"
     created_at: str
     data_version: str
     data_start_date: date | None = None

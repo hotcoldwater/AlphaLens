@@ -16,7 +16,10 @@ Rules:
 - Preserve explicit user values.
 - Put omitted user inputs in missing_fields and values selected by a safe default in assumptions.
 - Default execution is CLOSE signal and NEXT_OPEN execution.
-- Default market is KRX, daily timeframe, adjusted prices, and KRW.
+- For explicit NASDAQ or US stock requests, use market NASDAQ, the US ticker symbol
+  (for example NVDA or AAPL), daily adjusted prices, and USD capital.
+- Default market is KRX, daily timeframe, adjusted prices, and KRW only when the
+  user does not specify a market or a US stock.
 - The result is a draft only. It must always require user confirmation before execution.
 - If the request cannot be represented by the schema, explain it in warnings and use no unsupported feature.
 """

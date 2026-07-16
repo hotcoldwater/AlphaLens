@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +12,15 @@ from .api.strategy_draft_routes import router as strategy_draft_router
 from .schemas.error_schema import ErrorResponse
 
 app = FastAPI(title="AlphaLens API", version="0.1.0")
+local_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+configured_origins = [
+    origin.strip()
+    for origin in os.getenv("ALPHALENS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[*local_origins, *configured_origins],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
