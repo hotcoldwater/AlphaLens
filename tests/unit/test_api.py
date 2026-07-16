@@ -118,7 +118,7 @@ def test_market_data_endpoint_returns_normalized_provider_data(monkeypatch):
     data = pd.DataFrame(bars()).assign(date=lambda frame: pd.to_datetime(frame["date"])).set_index("date")
     version = build_data_version(data)
     expected = MarketDataFetch(
-        provider="FMP", symbol="NVDA", adjustment="FMP adjusted with adjClose factor",
+        provider="FMP", symbol="NVDA", adjustment="FMP dividend-adjusted EOD OHLCV",
         data=data, data_version=version,
     )
     monkeypatch.setattr(market_data_routes.market_data_service, "fetch", lambda **_: expected)

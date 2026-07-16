@@ -31,8 +31,13 @@ class FMPClient:
             raise FMPClientError("start_date must not be after end_date")
 
         try:
+            endpoint = (
+                "historical-price-eod/dividend-adjusted"
+                if adjusted_price
+                else "historical-price-eod/full"
+            )
             response = httpx.get(
-                f"{self.base_url}/historical-price-eod/full",
+                f"{self.base_url}/{endpoint}",
                 params={"symbol": symbol.upper()},
                 headers={"apikey": self.api_key},
                 timeout=20.0,
@@ -55,23 +60,30 @@ class FMPClient:
             raise FMPClientError(f"FMP returned no daily data for {symbol.upper()}")
 
         data = pd.DataFrame(payload)
-        required = {"date", "open", "high", "low", "close", "volume"}
+        required = (
+            {"date", "adjOpen", "adjHigh", "adjLow", "adjClose", "volume"}
+            if adjusted_price
+            else {"date", "open", "high", "low", "close", "volume"}
+        )
         if not required.issubset(data.columns):
             raise FMPClientError("FMP response does not contain complete daily OHLCV data")
+        if adjusted_price:
+            data = data.rename(columns={
+                "adjOpen": "open",
+                "adjHigh": "high",
+                "adjLow": "low",
+                "adjClose": "close",
+            })
         data["date"] = pd.to_datetime(data["date"], errors="raise")
         data = data.set_index("date").sort_index()
         data = data.loc[(data.index.date >= start_date) & (data.index.date <= end_date)]
         if data.empty:
             raise FMPClientError("FMP returned no market data within the requested date range")
 
-        adjustment = "FMP unadjusted EOD OHLCV"
-        if adjusted_price and "adjClose" in data.columns:
-            close = pd.to_numeric(data["close"], errors="raise")
-            adjusted_close = pd.to_numeric(data["adjClose"], errors="raise")
-            factor = adjusted_close / close
-            if factor.notna().all() and (factor > 0).all():
-                for column in ("open", "high", "low", "close"):
-                    data[column] = pd.to_numeric(data[column], errors="raise") * factor
-                adjustment = "FMP adjusted with adjClose factor"
+        adjustment = (
+            "FMP dividend-adjusted EOD OHLCV"
+            if adjusted_price
+            else "FMP unadjusted EOD OHLCV"
+        )
 
         return validate_ohlcv(data[["open", "high", "low", "close", "volume"]]), adjustment
