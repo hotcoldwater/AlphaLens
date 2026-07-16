@@ -1,0 +1,93 @@
+import operator as operator_module
+
+import pandas as pd
+
+from ..enums import IndicatorType, LogicType, OperatorType
+from ..schemas.strategy_schema import (
+    Condition,
+    IndicatorReference,
+    RuleSet,
+    Strategy,
+    ValueReference,
+)
+from .indicators import ema, rsi, sma
+from .signals import cross_above, cross_below
+
+
+def generate_strategy_signals(
+    data: pd.DataFrame, strategy: Strategy
+) -> tuple[pd.Series, pd.Series]:
+    """Compile the supported Strategy rules into entry and exit Boolean series."""
+    return evaluate_rules(data, strategy.entry_rules), evaluate_rules(data, strategy.exit_rules)
+
+
+def evaluate_rules(data: pd.DataFrame, rules: RuleSet) -> pd.Series:
+    if data.empty:
+        raise ValueError("data must not be empty")
+    results = [evaluate_condition(data, condition) for condition in rules.conditions]
+    combined = results[0]
+    for result in results[1:]:
+        combined = combined & result if rules.logic == LogicType.AND else combined | result
+    return combined.fillna(False).astype(bool)
+
+
+def evaluate_condition(data: pd.DataFrame, condition: Condition) -> pd.Series:
+    left = _resolve_operand(data, condition.left)
+    right = _resolve_operand(data, condition.right)
+    comparisons = {
+        OperatorType.GREATER_THAN: operator_module.gt,
+        OperatorType.GREATER_THAN_OR_EQUAL: operator_module.ge,
+        OperatorType.LESS_THAN: operator_module.lt,
+        OperatorType.LESS_THAN_OR_EQUAL: operator_module.le,
+        OperatorType.EQUAL: operator_module.eq,
+    }
+    if condition.operator in comparisons:
+        result = comparisons[condition.operator](left, right)
+    elif condition.operator == OperatorType.CROSS_ABOVE:
+        result = cross_above(left, right)
+    elif condition.operator == OperatorType.CROSS_BELOW:
+        result = cross_below(left, right)
+    else:  # The enum makes this unreachable unless a new operator is added.
+        raise ValueError(f"unsupported operator: {condition.operator}")
+    return result.fillna(False).astype(bool)
+
+
+def _resolve_operand(
+    data: pd.DataFrame, operand: IndicatorReference | ValueReference
+) -> pd.Series:
+    if isinstance(operand, ValueReference):
+        return pd.Series(float(operand.value), index=data.index)
+    return _indicator_series(data, operand)
+
+
+def _indicator_series(data: pd.DataFrame, reference: IndicatorReference) -> pd.Series:
+    indicator = reference.indicator
+    column_map = {
+        IndicatorType.OPEN: "open",
+        IndicatorType.HIGH: "high",
+        IndicatorType.LOW: "low",
+        IndicatorType.CLOSE: "close",
+        IndicatorType.VOLUME: "volume",
+    }
+    if indicator in column_map:
+        column = column_map[indicator]
+        if column not in data:
+            raise ValueError(f"data must contain {column} column")
+        return data[column].astype(float)
+    if indicator == IndicatorType.SMA:
+        return sma(data["close"].astype(float), reference.period)
+    if indicator == IndicatorType.EMA:
+        return ema(data["close"].astype(float), reference.period)
+    if indicator == IndicatorType.RSI:
+        return rsi(data["close"].astype(float), reference.period)
+    if indicator == IndicatorType.RETURN:
+        return data["close"].astype(float).pct_change()
+    if indicator == IndicatorType.N_DAY_RETURN:
+        return data["close"].astype(float).pct_change(reference.period)
+    if indicator == IndicatorType.N_DAY_HIGH:
+        return data["high"].astype(float).rolling(reference.period, min_periods=reference.period).max()
+    if indicator == IndicatorType.N_DAY_LOW:
+        return data["low"].astype(float).rolling(reference.period, min_periods=reference.period).min()
+    if indicator == IndicatorType.VOLUME_SMA:
+        return sma(data["volume"].astype(float), reference.period)
+    raise ValueError(f"unsupported indicator: {indicator}")
