@@ -66,7 +66,9 @@ class OpenAIStrategyClient:
                 text_format=StrategyParseResult,
             )
         except Exception as error:
-            raise OpenAIClientError("OpenAI strategy parsing failed") from error
+            raise OpenAIClientError(
+                f"OpenAI strategy parsing failed ({type(error).__name__})"
+            ) from error
         if response.output_parsed is None:
             raise OpenAIClientError("OpenAI returned no structured strategy")
         return response.output_parsed
@@ -102,7 +104,9 @@ class OpenAIStrategyClient:
                 text_format=BacktestExplanation,
             )
         except Exception as error:
-            raise OpenAIClientError("OpenAI backtest explanation failed") from error
+            raise OpenAIClientError(
+                f"OpenAI backtest explanation failed ({type(error).__name__})"
+            ) from error
         if response.output_parsed is None:
             raise OpenAIClientError("OpenAI returned no structured explanation")
         return response.output_parsed

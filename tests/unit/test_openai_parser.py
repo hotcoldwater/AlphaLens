@@ -47,6 +47,19 @@ def test_openai_client_requires_api_key():
         OpenAIStrategyClient(api_key="").parse_strategy("전략")
 
 
+def test_openai_client_returns_safe_error_type_when_parsing_fails():
+    client = OpenAIStrategyClient(api_key="test-key", model="test-model")
+
+    class FailedResponses:
+        def parse(self, **kwargs):
+            raise RuntimeError("network detail must not be exposed")
+
+    client._client = type("FakeClient", (), {"responses": FailedResponses()})()
+
+    with pytest.raises(OpenAIClientError, match=r"RuntimeError\)"):
+        client.parse_strategy("전략")
+
+
 def test_openai_client_explains_fixed_result_with_structured_output():
     client = OpenAIStrategyClient(api_key="test-key", model="test-model")
     explanation = BacktestExplanation(
