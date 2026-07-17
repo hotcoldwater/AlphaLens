@@ -306,6 +306,19 @@ button:disabled {
   font-size: 14px;
   line-height: 1.65;
 }
+.editor-impact,
+.editor-validation {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.editor-impact {
+  padding: 10px 12px;
+  background: rgba(65, 116, 126, 0.1);
+}
+.editor-validation {
+  color: #b54834 !important;
+  font-weight: 700;
+}
 
 .strategy-form,
 .condition-fields {
