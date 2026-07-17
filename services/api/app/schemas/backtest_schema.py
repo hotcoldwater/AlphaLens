@@ -1,4 +1,5 @@
 from datetime import date
+import re
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -21,11 +22,23 @@ class MarketDataFetchRequest(BaseModel):
     """Request daily market data from a configured external provider."""
 
     model_config = ConfigDict(extra="forbid")
-    provider: Literal["FMP", "KRX"]
+    provider: Literal["YFINANCE", "PYKRX", "FMP"]
     symbol: str = Field(min_length=1, max_length=32)
     start_date: date
     end_date: date
     adjusted_price: bool = True
+
+    @model_validator(mode="after")
+    def validate_provider_symbol(self) -> "MarketDataFetchRequest":
+        symbol = self.symbol.strip()
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date")
+        if self.provider == "PYKRX" and not re.fullmatch(r"\d{6}", symbol):
+            raise ValueError("PYKRX symbol must be a six-digit KRX ticker, for example 005930")
+        if self.provider in {"YFINANCE", "FMP"} and not re.fullmatch(r"[A-Za-z0-9.^=_-]+", symbol):
+            raise ValueError("US market symbol contains unsupported characters")
+        self.symbol = symbol
+        return self
 
 
 class MarketDataFetchResponse(BaseModel):
@@ -38,6 +51,13 @@ class MarketDataFetchResponse(BaseModel):
     data_end_date: date
     data_points: int
     data: list[OHLCVBar]
+
+
+class MarketSymbolResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: str
+    symbol: str
+    name: str
 
 
 class BacktestRequest(BaseModel):

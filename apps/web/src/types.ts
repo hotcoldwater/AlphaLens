@@ -69,6 +69,12 @@ export type MarketDataFetchResult = {
   data: OHLCVBar[];
 };
 
+export type MarketSymbol = {
+  provider: string;
+  symbol: string;
+  name: string;
+};
+
 export type IndicatorReference = {
   type: "INDICATOR";
   indicator: string;

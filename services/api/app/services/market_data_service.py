@@ -7,6 +7,8 @@ import pandas as pd
 
 from ..backtest_engine.market_data import DataVersion, build_data_version
 from ..clients.fmp_client import FMPClient, FMPClientError
+from ..clients.pykrx_client import PykrxClient, PykrxClientError
+from ..clients.yfinance_client import YFinanceClient, YFinanceClientError
 
 
 @dataclass(frozen=True)
@@ -16,6 +18,13 @@ class MarketDataFetch:
     adjustment: str
     data: pd.DataFrame
     data_version: DataVersion
+
+
+@dataclass(frozen=True)
+class MarketSymbol:
+    provider: str
+    symbol: str
+    name: str
 
 
 class MarketDataService:
@@ -29,18 +38,24 @@ class MarketDataService:
         end_date: date,
         adjusted_price: bool,
     ) -> MarketDataFetch:
-        if provider == "KRX":
-            raise ValueError(
-                "KRX Open API integration is pending approval. Set KRX_API_KEY after approval, then enable the requested KRX service."
-            )
-        if provider != "FMP":
+        provider = provider.upper()
+        if provider not in {"YFINANCE", "PYKRX", "FMP"}:
             raise ValueError(f"unsupported market data provider: {provider}")
 
         try:
-            data, adjustment = FMPClient().fetch_daily_ohlcv(
-                symbol, start_date, end_date, adjusted_price
-            )
-        except FMPClientError as error:
+            if provider == "YFINANCE":
+                data, adjustment = YFinanceClient().fetch_daily_ohlcv(
+                    symbol, start_date, end_date, adjusted_price
+                )
+            elif provider == "PYKRX":
+                data, adjustment = PykrxClient().fetch_daily_ohlcv(
+                    symbol, start_date, end_date, adjusted_price
+                )
+            else:
+                data, adjustment = FMPClient().fetch_daily_ohlcv(
+                    symbol, start_date, end_date, adjusted_price
+                )
+        except (FMPClientError, PykrxClientError, YFinanceClientError) as error:
             raise ValueError(str(error)) from error
 
         data_version = build_data_version(data)
@@ -52,6 +67,23 @@ class MarketDataService:
             data=data,
             data_version=data_version,
         )
+
+    def search_symbols(self, provider: str, query: str, limit: int = 8) -> list[MarketSymbol]:
+        provider = provider.upper()
+        query = query.strip()
+        if provider not in {"YFINANCE", "PYKRX"}:
+            raise ValueError(f"symbol search is not supported for provider: {provider}")
+        if not query:
+            raise ValueError("search query must not be empty")
+        try:
+            pairs = (
+                YFinanceClient().search_symbols(query, limit)
+                if provider == "YFINANCE"
+                else PykrxClient().search_symbols(query, limit)
+            )
+        except (PykrxClientError, YFinanceClientError) as error:
+            raise ValueError(str(error)) from error
+        return [MarketSymbol(provider=provider, symbol=symbol, name=name) for symbol, name in pairs]
 
     @staticmethod
     def _cache(provider: str, symbol: str, data: pd.DataFrame, version: DataVersion) -> None:

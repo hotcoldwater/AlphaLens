@@ -10,6 +10,7 @@ import {
   getStrategyVersions,
   parseStrategy,
   runDraftBacktest,
+  searchMarketSymbols,
   updateDraft,
 } from "./api";
 import type {
@@ -20,6 +21,7 @@ import type {
   Condition,
   EquityPoint,
   OHLCVBar,
+  MarketSymbol,
   RegimeSwitchStrategy,
   Strategy,
   StrategyDraft,
@@ -833,62 +835,107 @@ function DraftView({
   const [source, setSource] = useState("데모 데이터 220일");
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
-  const [fmpSymbol, setFmpSymbol] = useState(
+  const [marketSymbol, setMarketSymbol] = useState(
     () => draft.strategy.universe.symbols[0] ?? "",
   );
-  const [loadingFmp, setLoadingFmp] = useState(false);
+  const [provider, setProvider] = useState<"YFINANCE" | "PYKRX" | "FMP">(
+    () => draft.strategy.market === "KRX" ? "PYKRX" : "YFINANCE",
+  );
+  const [loadingMarketData, setLoadingMarketData] = useState(false);
+  const [searchingSymbols, setSearchingSymbols] = useState(false);
+  const [symbolResults, setSymbolResults] = useState<MarketSymbol[]>([]);
   const [editing, setEditing] = useState(false);
   const [editedStrategy, setEditedStrategy] = useState<Strategy>(draft.strategy);
   const [saving, setSaving] = useState(false);
-  async function selectCsv(event: ChangeEvent<HTMLInputElement>) {
-    if (isMultiAsset(draft.strategy)) {
-      setError("자산 전환 전략은 두 종목의 날짜를 맞춰야 하므로 현재 FMP 데이터 불러오기를 사용하세요.");
-      return;
-    }
+  async function readCsv(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
-      const next = parseCsv(await file.text());
-      setData(next);
-      setSource(`${file.name} · ${next.length}개 캔들`);
-      setError("");
+      return { file, data: parseCsv(await file.text()) };
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "CSV를 읽지 못했습니다.",
       );
+      return null;
     }
   }
-  async function loadFmp() {
+  async function selectCsv(event: ChangeEvent<HTMLInputElement>) {
+    const loaded = await readCsv(event);
+    if (!loaded) return;
+    setData(loaded.data);
+    setSource(`${loaded.file.name} · ${loaded.data.length}개 캔들`);
+    setError("");
+  }
+  async function selectMultiAssetCsv(symbol: string, event: ChangeEvent<HTMLInputElement>) {
+    const loaded = await readCsv(event);
+    if (!loaded) return;
+    const normalizedSymbol = symbol.toUpperCase();
+    const next = { ...dataBySymbol, [normalizedSymbol]: loaded.data };
+    setDataBySymbol(next);
+    setSource(`CSV · ${Object.entries(next).map(([item, bars]) => `${item} ${bars.length}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
+    setError("");
+  }
+  async function loadMarketData() {
     const symbols = isMultiAsset(draft.strategy)
       ? draft.strategy.universe.symbols
-      : [fmpSymbol.trim().toUpperCase()];
+      : [marketSymbol.trim().toUpperCase()];
     if (symbols.some((symbol) => !symbol)) {
-      setError("FMP 종목코드를 입력하세요. 예: AAPL, NVDA, MSFT");
+      setError("종목코드를 입력하세요. 예: AAPL, NVDA, 005930");
       return;
     }
-    setLoadingFmp(true);
+    setLoadingMarketData(true);
     setError("");
     try {
-      const results = await Promise.all(symbols.map((symbol) => fetchDailyOhlcv({
-        provider: "FMP", symbol, start_date: draft.strategy.period.start_date,
+      const settled = await Promise.allSettled(symbols.map((symbol) => fetchDailyOhlcv({
+        provider, symbol, start_date: draft.strategy.period.start_date,
         end_date: draft.strategy.period.end_date, adjusted_price: draft.strategy.data.adjusted_price,
       })));
+      const failures = settled.flatMap((result, index) => result.status === "rejected"
+        ? [`${symbols[index]}: ${result.reason instanceof Error ? result.reason.message : "조회 실패"}`]
+        : []);
+      if (failures.length) throw new Error(failures.join(" / "));
+      const results = settled.map((result) => {
+        if (result.status !== "fulfilled") throw new Error("시장 데이터를 불러오지 못했습니다.");
+        return result.value;
+      });
       if (isMultiAsset(draft.strategy)) {
         setDataBySymbol(Object.fromEntries(results.map((result) => [result.symbol, result.data])));
-        setSource(`FMP · ${results.map((result) => `${result.symbol} ${result.data_points}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
+        setSource(`${provider} · ${results.map((result) => `${result.symbol} ${result.data_points}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
       } else {
         const [result] = results;
         setData(result.data);
-        setSource(`FMP · ${result.symbol} · ${result.data_points}개 캔들 · ${result.adjustment}`);
+        setSource(`${provider} · ${result.symbol} · ${result.data_points}개 캔들 · ${result.adjustment}`);
       }
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "FMP 데이터를 불러오지 못했습니다.",
+          : "시장 데이터를 불러오지 못했습니다.",
       );
     } finally {
-      setLoadingFmp(false);
+      setLoadingMarketData(false);
+    }
+  }
+  async function searchSymbols() {
+    if (provider === "FMP") {
+      setError("FMP 종목 검색은 지원하지 않습니다. 종목코드를 직접 입력하세요.");
+      return;
+    }
+    const query = marketSymbol.trim();
+    if (!query) {
+      setError("검색할 종목코드 또는 종목명을 입력하세요.");
+      return;
+    }
+    setSearchingSymbols(true);
+    setError("");
+    try {
+      const results = await searchMarketSymbols(provider, query);
+      setSymbolResults(results);
+      if (!results.length) setError("일치하는 종목을 찾지 못했습니다.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "종목을 검색하지 못했습니다.");
+    } finally {
+      setSearchingSymbols(false);
     }
   }
   async function submit() {
@@ -1007,28 +1054,39 @@ function DraftView({
           <p>
             <strong>{source}</strong>
             <br />
-            FMP는 현재 NASDAQ 등 미국 주식 일봉 조회에 사용합니다. KRX 데이터는
-            승인 뒤 추가됩니다. CSV는 `date,open,high,low,close,volume` 헤더가
-            필요합니다.
+            개인용 기본 공급원은 미국 주식·ETF의 Yahoo Finance와 한국 주식·ETF의
+            pykrx입니다. FMP는 선택 공급원입니다. CSV는
+            `date,open,high,low,close,volume` 헤더가 필요합니다.
           </p>
         </div>
         <div className="data-actions">
           <div className="fmp-loader">
+            <select aria-label="시장 데이터 공급원" value={provider} onChange={(event) => { setProvider(event.target.value as "YFINANCE" | "PYKRX" | "FMP"); setSymbolResults([]); }}>
+              <option value="YFINANCE">Yahoo Finance (미국·ETF)</option>
+              <option value="PYKRX">pykrx (한국)</option>
+              <option value="FMP">FMP (선택)</option>
+            </select>
             <input
-              aria-label="FMP 종목코드"
-              value={fmpSymbol}
-              onChange={(event) => setFmpSymbol(event.target.value)}
-              placeholder="FMP 종목코드 예: NVDA"
+              aria-label="시장 종목코드"
+              value={marketSymbol}
+              onChange={(event) => setMarketSymbol(event.target.value)}
+              inputMode={provider === "PYKRX" ? "numeric" : "text"}
+              maxLength={provider === "PYKRX" ? 6 : 32}
+              placeholder={provider === "PYKRX" ? "종목코드 예: 005930" : "종목코드 예: NVDA"}
             />
+            <button className="fmp-button" onClick={searchSymbols} disabled={searchingSymbols}>
+              {searchingSymbols ? "검색 중..." : "종목 검색"}
+            </button>
             <button
               className="fmp-button"
-              onClick={loadFmp}
-              disabled={loadingFmp}
+              onClick={loadMarketData}
+              disabled={loadingMarketData}
             >
-              {loadingFmp ? "FMP 조회 중..." : "FMP에서 불러오기"}
+              {loadingMarketData ? "시장 데이터 조회 중..." : "시장 데이터 불러오기"}
             </button>
           </div>
-          {!isMultiAsset(draft.strategy) && <label className="file-button">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>}
+          {symbolResults.length > 0 && <div className="symbol-results">{symbolResults.map((result) => <button key={result.symbol} type="button" onClick={() => { setMarketSymbol(result.symbol); setSymbolResults([]); }}><strong>{result.symbol}</strong> {result.name}</button>)}</div>}
+          {isMultiAsset(draft.strategy) ? draft.strategy.universe.symbols.map((symbol) => <label className="file-button" key={symbol}>{symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>) : <label className="file-button">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>}
         </div>
       </section>
       {error && <p className="error workflow-error">{error}</p>}

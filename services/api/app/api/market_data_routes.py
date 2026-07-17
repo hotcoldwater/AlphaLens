@@ -1,13 +1,29 @@
-from fastapi import APIRouter, HTTPException
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Query
 
 from ..schemas.backtest_schema import (
     MarketDataFetchRequest,
     MarketDataFetchResponse,
+    MarketSymbolResponse,
     OHLCVBar,
 )
 from ..services.market_data_service import market_data_service
 
 router = APIRouter(prefix="/api/v1/market-data", tags=["market-data"])
+
+
+@router.get("/symbols/search", response_model=list[MarketSymbolResponse])
+def search_symbols(
+    provider: Literal["YFINANCE", "PYKRX"] = Query(),
+    query: str = Query(min_length=1, max_length=64),
+    limit: int = Query(default=8, ge=1, le=20),
+) -> list[MarketSymbolResponse]:
+    try:
+        symbols = market_data_service.search_symbols(provider, query, limit)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return [MarketSymbolResponse(**symbol.__dict__) for symbol in symbols]
 
 
 @router.post("/daily-ohlcv", response_model=MarketDataFetchResponse)

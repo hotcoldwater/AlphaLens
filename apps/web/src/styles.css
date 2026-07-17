@@ -772,10 +772,23 @@ td small {
   width: 190px;
   min-height: 52px;
 }
+.fmp-loader select {
+  min-height: 52px;
+}
 .fmp-button {
   min-height: 52px;
   white-space: nowrap;
   background: #41747e;
+}
+.symbol-results {
+  display: grid;
+  gap: 4px;
+}
+.symbol-results button {
+  text-align: left;
+  padding: 8px 10px;
+  background: rgba(253, 252, 246, 0.85);
+  color: #16322b;
 }
 .run-comparison {
   margin-top: 24px;

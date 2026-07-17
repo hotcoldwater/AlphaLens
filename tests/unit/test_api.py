@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from services.api.app.main import app
 from services.api.app.api import backtest_routes, market_data_routes, strategy_draft_routes
@@ -183,6 +184,60 @@ def test_market_data_endpoint_returns_normalized_provider_data(monkeypatch):
     assert response.json()["symbol"] == "NVDA"
     assert response.json()["data_version"] == version.identifier
     assert response.json()["data_points"] == 4
+
+
+@pytest.mark.parametrize("provider", ["YFINANCE", "PYKRX"])
+def test_market_data_endpoint_accepts_personal_providers(monkeypatch, provider):
+    import pandas as pd
+
+    data = pd.DataFrame(bars()).assign(date=lambda frame: pd.to_datetime(frame["date"])).set_index("date")
+    version = build_data_version(data)
+    expected = MarketDataFetch(
+        provider=provider, symbol="005930" if provider == "PYKRX" else "NVDA",
+        adjustment="test adjustment", data=data, data_version=version,
+    )
+    monkeypatch.setattr(market_data_routes.market_data_service, "fetch", lambda **_: expected)
+
+    response = client.post("/api/v1/market-data/daily-ohlcv", json={
+        "provider": provider,
+        "symbol": expected.symbol,
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-04",
+        "adjusted_price": True,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == provider
+
+
+def test_market_data_endpoint_rejects_invalid_provider_symbol_and_date_range():
+    invalid_krx = client.post("/api/v1/market-data/daily-ohlcv", json={
+        "provider": "PYKRX", "symbol": "SAMSUNG", "start_date": "2024-01-01",
+        "end_date": "2024-01-04", "adjusted_price": True,
+    })
+    assert invalid_krx.status_code == 422
+    assert "six-digit KRX ticker" in invalid_krx.json()["details"][0]["msg"]
+
+    invalid_period = client.post("/api/v1/market-data/daily-ohlcv", json={
+        "provider": "YFINANCE", "symbol": "NVDA", "start_date": "2024-02-01",
+        "end_date": "2024-01-04", "adjusted_price": True,
+    })
+    assert invalid_period.status_code == 422
+    assert "start_date" in invalid_period.json()["details"][0]["msg"]
+
+
+def test_market_symbol_search_endpoint_returns_provider_results(monkeypatch):
+    from services.api.app.services.market_data_service import MarketSymbol
+
+    monkeypatch.setattr(
+        market_data_routes.market_data_service,
+        "search_symbols",
+        lambda provider, query, limit: [MarketSymbol(provider, "005930", "삼성전자")],
+    )
+    response = client.get("/api/v1/market-data/symbols/search?provider=PYKRX&query=%EC%82%BC%EC%84%B1")
+
+    assert response.status_code == 200
+    assert response.json() == [{"provider": "PYKRX", "symbol": "005930", "name": "삼성전자"}]
 
 
 def test_backtest_result_returns_not_found_error():
