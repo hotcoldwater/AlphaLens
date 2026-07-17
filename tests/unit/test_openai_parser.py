@@ -7,6 +7,7 @@ from services.api.app.enums import BacktestStatus
 from services.api.app.schemas.backtest_explanation_schema import BacktestExplanation
 from services.api.app.schemas.backtest_schema import BacktestResponse
 from services.api.app.schemas.strategy_parse_schema import StrategyParseResult
+from services.api.app.schemas.strategy_schema import AllocationRebalanceStrategy
 from tests.unit.test_strategy_schema import valid_strategy
 
 
@@ -78,6 +79,29 @@ def test_parser_does_not_silently_replace_asset_switch_with_cash_strategy():
 
     assert result.needs_clarification is True
     assert any("자동 변경하지 않습니다" in warning for warning in result.warnings)
+
+
+def test_parser_allows_allocation_strategy_even_when_request_mentions_switching():
+    allocation = AllocationRebalanceStrategy.model_validate({
+        "strategy_type": "ALLOCATION_REBALANCE",
+        "strategy_name": "NVDA GLD monthly allocation",
+        "market": "NASDAQ",
+        "universe": {"type": "ALLOCATION_REBALANCE", "symbols": ["NVDA", "GLD"]},
+        "period": {"start_date": "2024-01-01", "end_date": "2024-12-31"},
+        "target_allocations": [{"symbol": "NVDA", "weight": 0.7}, {"symbol": "GLD", "weight": 0.3}],
+        "rebalance": {"frequency": "MONTHLY"},
+        "capital": {"initial_cash": 10_000, "currency": "USD"},
+    })
+
+    class AllocationClient:
+        def parse_strategy(self, raw_input: str) -> StrategyParseResult:
+            return StrategyParseResult(strategy=allocation)
+
+    result = StrategyParserService(client=AllocationClient()).parse(
+        "NVDA와 GLD 비중을 매월 전환해줘"
+    )
+
+    assert result.needs_clarification is False
 
 
 def test_openai_client_explains_fixed_result_with_structured_output():
