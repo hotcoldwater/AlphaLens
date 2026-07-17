@@ -9,7 +9,10 @@ from ..schemas.strategy_parse_schema import (
     StrategyDraftUpdate,
     StrategyParseRequest,
 )
-from ..services.strategy_parser_service import StrategyParserService
+from ..services.strategy_parser_service import (
+    StrategyParserService,
+    requires_external_signal_support,
+)
 from ..services.strategy_draft_store import strategy_draft_store
 from .backtest_routes import _to_response
 
@@ -49,6 +52,14 @@ def backtest_confirmed_draft(
     draft_id: str, request: DraftBacktestRequest
 ) -> BacktestResponse:
     draft = strategy_draft_store.get(draft_id)
+    if requires_external_signal_support(draft.raw_input, draft.strategy):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "KOSPI·KOSDAQ 등 별도 지수 신호로 다른 종목을 매매하는 전략은 아직 "
+                "지원하지 않습니다. 지수 신호를 주문 종목의 신호로 바꿔 실행하지 않습니다."
+            ),
+        )
     if draft.status.value != "CONFIRMED":
         raise HTTPException(status_code=409, detail="strategy must be confirmed before backtest")
     return _to_response(

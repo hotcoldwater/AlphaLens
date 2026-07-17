@@ -1258,7 +1258,7 @@ function DraftView({
         </div>
       </section>
       {error && <p className="error workflow-error">{error}</p>}
-      {draft.needs_clarification && <p className="error workflow-error">이 초안은 자산 전환 의도가 확정되지 않아 실행할 수 없습니다. 초안 수정에서 전환 자산과 조건을 지정하세요.</p>}
+      {draft.needs_clarification && <p className="error workflow-error">이 초안은 실행 전에 추가 확인이 필요합니다. {draft.missing_fields.join(" · ")}</p>}
       <button
         className="run-button"
         onClick={submit}

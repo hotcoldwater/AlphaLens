@@ -104,6 +104,19 @@ def test_parser_allows_allocation_strategy_even_when_request_mentions_switching(
     assert result.needs_clarification is False
 
 
+def test_parser_blocks_index_signal_that_would_be_applied_to_a_different_stock():
+    class SingleStockClient:
+        def parse_strategy(self, raw_input: str) -> StrategyParseResult:
+            return parsed_result()
+
+    result = StrategyParserService(client=SingleStockClient()).parse(
+        "KOSPI가 전일 대비 하락하면 삼성전자를 매수하고 상승하면 매도해줘"
+    )
+
+    assert result.needs_clarification is True
+    assert any("별도 지수" in warning for warning in result.warnings)
+
+
 def test_openai_client_explains_fixed_result_with_structured_output():
     client = OpenAIStrategyClient(api_key="test-key", model="test-model")
     explanation = BacktestExplanation(
