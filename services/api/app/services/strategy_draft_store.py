@@ -78,36 +78,57 @@ class StrategyDraftStore:
         return self.get(draft_id)
 
     def confirm(self, draft_id: str) -> ConfirmedStrategyResponse:
-        draft = self.get(draft_id)
-        if draft.status != StrategyStatus.READY_TO_CONFIRM:
-            raise HTTPException(status_code=409, detail="strategy draft is not awaiting confirmation")
-        with self._lock, connect() as connection:
-            strategy_id = draft.strategy_id or str(uuid4())
-            version = execute(
-                connection,
-                "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM strategy_versions WHERE strategy_id = ?",
-                (strategy_id,),
-            ).fetchone()["next_version"]
-            execute(
-                connection,
-                "UPDATE strategy_drafts SET status = ?, needs_confirmation = 0, strategy_id = ?, strategy_version = ? WHERE draft_id = ?",
-                (StrategyStatus.CONFIRMED.value, strategy_id, version, draft_id),
-            )
-            execute(
-                connection,
-                """
-                INSERT INTO strategy_versions
-                (strategy_id, version, draft_id, strategy_json, confirmed_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    strategy_id,
-                    version,
-                    draft_id,
-                    json.dumps(draft.strategy.model_dump(mode="json")),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
+        """Confirm a draft once, while allowing safe retries after confirmation.
+
+        A client can lose the response after confirmation (for example when a
+        subsequent backtest call fails). Confirmation must therefore be
+        idempotent: retrying it returns the original immutable version instead
+        of creating another version or rejecting a usable draft.
+        """
+        with self._lock:
+            draft = self.get(draft_id)
+            if draft.status == StrategyStatus.CONFIRMED:
+                if draft.strategy_id is None or draft.strategy_version is None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="confirmed strategy draft is missing version metadata",
+                    )
+                return ConfirmedStrategyResponse(
+                    strategy_id=draft.strategy_id,
+                    version=draft.strategy_version,
+                    status=StrategyStatus.CONFIRMED,
+                    strategy=draft.strategy,
+                )
+            if draft.status != StrategyStatus.READY_TO_CONFIRM:
+                raise HTTPException(status_code=409, detail="strategy draft is not ready for confirmation")
+
+            with connect() as connection:
+                strategy_id = draft.strategy_id or str(uuid4())
+                version = execute(
+                    connection,
+                    "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM strategy_versions WHERE strategy_id = ?",
+                    (strategy_id,),
+                ).fetchone()["next_version"]
+                execute(
+                    connection,
+                    "UPDATE strategy_drafts SET status = ?, needs_confirmation = 0, strategy_id = ?, strategy_version = ? WHERE draft_id = ?",
+                    (StrategyStatus.CONFIRMED.value, strategy_id, version, draft_id),
+                )
+                execute(
+                    connection,
+                    """
+                    INSERT INTO strategy_versions
+                    (strategy_id, version, draft_id, strategy_json, confirmed_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        strategy_id,
+                        version,
+                        draft_id,
+                        json.dumps(draft.strategy.model_dump(mode="json")),
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
         return ConfirmedStrategyResponse(
             strategy_id=strategy_id,
             version=version,

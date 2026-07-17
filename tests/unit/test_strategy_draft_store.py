@@ -21,6 +21,10 @@ def test_strategy_draft_and_version_survive_store_recreation(monkeypatch, tmp_pa
     assert confirmed.version == 1
     assert confirmed.status == "CONFIRMED"
 
+    retried_confirmation = second_store.confirm(draft.draft_id)
+    assert retried_confirmation.strategy_id == confirmed.strategy_id
+    assert retried_confirmation.version == confirmed.version
+
     with sqlite3.connect(tmp_path / "alphalens.db") as connection:
         count = connection.execute("SELECT COUNT(*) FROM strategy_versions").fetchone()[0]
     assert count == 1

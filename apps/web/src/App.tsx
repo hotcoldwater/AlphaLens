@@ -1305,7 +1305,9 @@ export default function App() {
   }
   async function execute(requestBody: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]>; data_sources?: MarketDataSource[] }) {
     if (!draft) return;
-    await confirmDraft(draft.draft_id);
+    // A confirmed draft can be retried after a failed data fetch or backtest.
+    // Do not ask the API to create another version in that case.
+    if (draft.status !== "CONFIRMED") await confirmDraft(draft.draft_id);
     const next = await runDraftBacktest(draft.draft_id, requestBody);
     setResult(next);
     window.history.replaceState(null, "", `?backtestId=${next.backtest_id}`);
