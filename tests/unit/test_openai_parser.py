@@ -95,7 +95,7 @@ def test_parser_allows_allocation_strategy_even_when_request_mentions_switching(
 
     class AllocationClient:
         def parse_strategy(self, raw_input: str) -> StrategyParseResult:
-            return StrategyParseResult(strategy=allocation)
+            return StrategyParseResult(strategy=allocation, needs_clarification=True)
 
     result = StrategyParserService(client=AllocationClient()).parse(
         "NVDA와 GLD 비중을 매월 전환해줘"

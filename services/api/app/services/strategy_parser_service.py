@@ -11,6 +11,11 @@ class StrategyParserService:
         result = self.client.parse_strategy(raw_input)
         # This is a safety invariant even if a future client implementation changes.
         result.needs_confirmation = True
+        # The model may conservatively set this flag even when it returned a fully
+        # valid multi-asset schema. A validated executable strategy must not be
+        # blocked by that advisory model flag.
+        if isinstance(result.strategy, (RegimeSwitchStrategy, AllocationRebalanceStrategy)):
+            result.needs_clarification = False
         if _requests_asset_switch(raw_input) and not isinstance(
             result.strategy, (RegimeSwitchStrategy, AllocationRebalanceStrategy)
         ):
