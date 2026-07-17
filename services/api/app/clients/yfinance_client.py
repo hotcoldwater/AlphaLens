@@ -62,8 +62,14 @@ class YFinanceClient:
         except Exception as error:  # yfinance exposes several transport exceptions.
             raise YFinanceClientError("Yahoo Finance request failed") from error
 
-        if data is None or data.empty:
+        if not isinstance(data, pd.DataFrame) or data.empty:
             raise YFinanceClientError(f"Yahoo Finance returned no daily data for {symbol.upper()}")
+        if isinstance(data.columns, pd.MultiIndex):
+            # yfinance can return a MultiIndex even for one ticker, depending on version.
+            ticker_levels = data.columns.get_level_values(-1).unique()
+            if len(ticker_levels) != 1:
+                raise YFinanceClientError("Yahoo Finance returned multiple tickers for a single-symbol request")
+            data.columns = data.columns.get_level_values(0)
         required = {"Open", "High", "Low", "Close", "Volume"}
         if not required.issubset(data.columns):
             raise YFinanceClientError("Yahoo Finance response does not contain complete daily OHLCV data")
@@ -71,6 +77,8 @@ class YFinanceClient:
         data = data.rename(columns={
             "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume",
         })
+        if data.columns.duplicated().any():
+            raise YFinanceClientError("Yahoo Finance response contains duplicate OHLCV columns")
         data.index = pd.to_datetime(data.index, errors="raise").tz_localize(None)
         data.index.name = "date"
         data = data.loc[(data.index.date >= start_date) & (data.index.date <= end_date)]
