@@ -1,4 +1,5 @@
 from datetime import date
+import json
 import sys
 from types import ModuleType
 
@@ -124,6 +125,9 @@ def test_market_data_service_fetches_personal_provider(
     assert result.adjustment == adjustment
     assert result.data_version.point_count == 2
     assert list((tmp_path / provider.lower() / symbol).glob("*.csv"))
+    metadata_paths = list((tmp_path / provider.lower() / symbol).glob("*.json"))
+    assert len(metadata_paths) == 1
+    assert json.loads(metadata_paths[0].read_text())["provider"] == provider
 
 
 @pytest.mark.parametrize(

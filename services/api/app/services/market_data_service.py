@@ -1,5 +1,6 @@
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
+import json
 import os
 from pathlib import Path
 
@@ -18,6 +19,7 @@ class MarketDataFetch:
     adjustment: str
     data: pd.DataFrame
     data_version: DataVersion
+    collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -59,13 +61,15 @@ class MarketDataService:
             raise ValueError(str(error)) from error
 
         data_version = build_data_version(data)
-        self._cache(provider, symbol, data, data_version)
+        collected_at = datetime.now(timezone.utc)
+        self._cache(provider, symbol, data, data_version, adjustment, collected_at)
         return MarketDataFetch(
             provider=provider,
             symbol=symbol.upper(),
             adjustment=adjustment,
             data=data,
             data_version=data_version,
+            collected_at=collected_at,
         )
 
     def search_symbols(self, provider: str, query: str, limit: int = 8) -> list[MarketSymbol]:
@@ -86,7 +90,14 @@ class MarketDataService:
         return [MarketSymbol(provider=provider, symbol=symbol, name=name) for symbol, name in pairs]
 
     @staticmethod
-    def _cache(provider: str, symbol: str, data: pd.DataFrame, version: DataVersion) -> None:
+    def _cache(
+        provider: str,
+        symbol: str,
+        data: pd.DataFrame,
+        version: DataVersion,
+        adjustment: str,
+        collected_at: datetime,
+    ) -> None:
         # The hash is part of the filename: later requests never overwrite prior input data.
         directory = (
             Path(os.getenv("ALPHALENS_MARKET_DATA_PATH", "data/market_data"))
@@ -97,6 +108,18 @@ class MarketDataService:
         path = directory / f"{version.identifier.removeprefix('sha256:')}.csv"
         if not path.exists():
             data.to_csv(path, index_label="date")
+        metadata_path = path.with_suffix(".json")
+        if not metadata_path.exists():
+            metadata_path.write_text(json.dumps({
+                "provider": provider,
+                "symbol": symbol.upper(),
+                "adjustment": adjustment,
+                "data_version": version.identifier,
+                "data_start_date": version.start_date,
+                "data_end_date": version.end_date,
+                "data_points": version.point_count,
+                "collected_at": collected_at.isoformat(),
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 market_data_service = MarketDataService()

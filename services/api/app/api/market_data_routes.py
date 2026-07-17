@@ -47,6 +47,7 @@ def fetch_daily_ohlcv(request: MarketDataFetchRequest) -> MarketDataFetchRespons
         data_start_date=result.data_version.start_date,
         data_end_date=result.data_version.end_date,
         data_points=result.data_version.point_count,
+        collected_at=result.collected_at,
         data=[
             OHLCVBar(
                 date=index.date(),

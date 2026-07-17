@@ -22,6 +22,7 @@ import type {
   EquityPoint,
   OHLCVBar,
   MarketSymbol,
+  MarketDataSource,
   RegimeSwitchStrategy,
   Strategy,
   StrategyDraft,
@@ -571,6 +572,11 @@ function ResultView({
           {result.data_points}개 캔들
         </p>
         <code>{result.data_version}</code>
+        {result.data_sources.length > 0 && <ul>
+          {result.data_sources.map((source) => <li key={`${source.provider}-${source.symbol}-${source.data_version}`}>
+            {source.symbol} · {source.provider} · {source.adjustment} · 수집 {new Date(source.collected_at).toLocaleString("ko-KR")}
+          </li>)}
+        </ul>}
       </section>
       <section className="panel trades-panel">
         <div className="panel-head">
@@ -841,11 +847,12 @@ function DraftView({
 }: {
   draft: StrategyDraft;
   onBack: () => void;
-  onRun: (request: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]> }) => Promise<void>;
+  onRun: (request: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]>; data_sources?: MarketDataSource[] }) => Promise<void>;
   onUpdate: (strategy: Strategy) => Promise<void>;
 }) {
   const [data, setData] = useState<OHLCVBar[]>(makeDemoData);
   const [dataBySymbol, setDataBySymbol] = useState<Record<string, OHLCVBar[]>>({});
+  const [dataSources, setDataSources] = useState<MarketDataSource[]>([]);
   const [source, setSource] = useState("데모 데이터 220일");
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
@@ -877,6 +884,7 @@ function DraftView({
     const loaded = await readCsv(event);
     if (!loaded) return;
     setData(loaded.data);
+    setDataSources([]);
     setSource(`${loaded.file.name} · ${loaded.data.length}개 캔들`);
     setError("");
   }
@@ -886,6 +894,7 @@ function DraftView({
     const normalizedSymbol = symbol.toUpperCase();
     const next = { ...dataBySymbol, [normalizedSymbol]: loaded.data };
     setDataBySymbol(next);
+    setDataSources([]);
     setSource(`CSV · ${Object.entries(next).map(([item, bars]) => `${item} ${bars.length}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
     setError("");
   }
@@ -914,10 +923,18 @@ function DraftView({
       });
       if (isMultiAsset(draft.strategy)) {
         setDataBySymbol(Object.fromEntries(results.map((result) => [result.symbol, result.data])));
+        setDataSources(results.map((result) => ({
+          symbol: result.symbol, provider: result.provider, adjustment: result.adjustment,
+          data_version: result.data_version, collected_at: result.collected_at,
+        })));
         setSource(`${provider} · ${results.map((result) => `${result.symbol} ${result.data_points}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
       } else {
         const [result] = results;
         setData(result.data);
+        setDataSources([{
+          symbol: result.symbol, provider: result.provider, adjustment: result.adjustment,
+          data_version: result.data_version, collected_at: result.collected_at,
+        }]);
         setSource(`${provider} · ${result.symbol} · ${result.data_points}개 캔들 · ${result.adjustment}`);
       }
     } catch (caught) {
@@ -963,7 +980,9 @@ function DraftView({
     setRunning(true);
     setError("");
     try {
-      await onRun(isMultiAsset(draft.strategy) ? { data_by_symbol: dataBySymbol } : { data });
+      await onRun(isMultiAsset(draft.strategy)
+        ? { data_by_symbol: dataBySymbol, data_sources: dataSources }
+        : { data, data_sources: dataSources });
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -1156,7 +1175,7 @@ export default function App() {
       setLoading(false);
     }
   }
-  async function execute(requestBody: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]> }) {
+  async function execute(requestBody: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]>; data_sources?: MarketDataSource[] }) {
     if (!draft) return;
     await confirmDraft(draft.draft_id);
     const next = await runDraftBacktest(draft.draft_id, requestBody);

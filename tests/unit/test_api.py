@@ -106,6 +106,25 @@ def test_backtest_response_uses_strategy_currency():
     assert response.json()["currency"] == "USD"
 
 
+def test_backtest_persists_market_data_provenance():
+    response = client.post("/api/v1/backtests", json={
+        "strategy": api_strategy(),
+        "data": bars(),
+        "data_sources": [{
+            "symbol": "NVDA",
+            "provider": "YFINANCE",
+            "adjustment": "Yahoo Finance auto-adjusted daily OHLCV",
+            "data_version": "sha256:provider-input",
+            "collected_at": "2026-07-17T08:00:00Z",
+        }],
+    })
+
+    assert response.status_code == 200
+    assert response.json()["data_sources"][0]["symbol"] == "NVDA"
+    saved = client.get(f"/api/v1/backtests/{response.json()['backtest_id']}/result")
+    assert saved.json()["data_sources"] == response.json()["data_sources"]
+
+
 def test_backtest_endpoint_runs_two_asset_regime_switch():
     spy = bars()
     spy[1]["close"] = 90

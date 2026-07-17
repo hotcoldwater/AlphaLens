@@ -3,6 +3,7 @@ import type {
   BacktestResult,
   BacktestRunSummary,
   MarketDataFetchResult,
+  MarketDataSource,
   MarketSymbol,
   OHLCVBar,
   Strategy,
@@ -63,7 +64,7 @@ export function updateDraft(
 
 export function runDraftBacktest(
   draftId: string,
-  requestBody: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]> },
+  requestBody: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]>; data_sources?: MarketDataSource[] },
 ): Promise<BacktestResult> {
   return request(
     `/api/v1/strategy-drafts/${encodeURIComponent(draftId)}/backtest`,

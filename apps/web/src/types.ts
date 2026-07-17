@@ -21,6 +21,7 @@ export type BacktestResult = {
   data_start_date: string | null;
   data_end_date: string | null;
   data_points: number;
+  data_sources: MarketDataSource[];
   benchmark_name: string;
   benchmark_total_return: number;
   benchmark_max_drawdown: number;
@@ -66,7 +67,16 @@ export type MarketDataFetchResult = {
   data_start_date: string;
   data_end_date: string;
   data_points: number;
+  collected_at: string;
   data: OHLCVBar[];
+};
+
+export type MarketDataSource = {
+  symbol: string;
+  provider: string;
+  adjustment: string;
+  data_version: string;
+  collected_at: string;
 };
 
 export type MarketSymbol = {

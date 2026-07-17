@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 import re
 from typing import Annotated, Literal
 
@@ -50,7 +50,19 @@ class MarketDataFetchResponse(BaseModel):
     data_start_date: date
     data_end_date: date
     data_points: int
+    collected_at: datetime
     data: list[OHLCVBar]
+
+
+class MarketDataSource(BaseModel):
+    """Provider metadata retained with a backtest for reproducibility."""
+
+    model_config = ConfigDict(extra="forbid")
+    symbol: str = Field(min_length=1, max_length=32)
+    provider: str = Field(min_length=1, max_length=32)
+    adjustment: str = Field(min_length=1, max_length=160)
+    data_version: str = Field(min_length=1, max_length=80)
+    collected_at: datetime
 
 
 class MarketSymbolResponse(BaseModel):
@@ -65,6 +77,7 @@ class BacktestRequest(BaseModel):
     strategy: StrategyDefinition
     data: list[OHLCVBar] | None = None
     data_by_symbol: dict[str, Annotated[list[OHLCVBar], Field(min_length=1)]] | None = None
+    data_sources: list[MarketDataSource] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_data_shape(self) -> "BacktestRequest":
@@ -113,6 +126,7 @@ class BacktestResponse(BaseModel):
     data_start_date: date | None = None
     data_end_date: date | None = None
     data_points: int = 0
+    data_sources: list[MarketDataSource] = Field(default_factory=list)
     benchmark_name: str = "Same-data Buy & Hold"
     benchmark_total_return: float = 0.0
     benchmark_max_drawdown: float = 0.0
