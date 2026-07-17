@@ -1087,7 +1087,7 @@ GET  /api/v1/market-data/symbols/{symbol}/availability
 
 다음 완료 조건:
 
-- Cloudflare Pages에서 생성한 전략 초안, 확정 버전, 실행 결과가 Neon에 실제 저장되는 E2E 검증
+- Cloudflare Pages에서 생성한 전략 초안, 확정 버전, 실행 결과가 Neon에 실제 저장되는 E2E 검증 **완료**
 - SQLite 개발 데이터의 선택적 내보내기/가져오기 도구
 - Alembic 기반 스키마 마이그레이션 체계
 
