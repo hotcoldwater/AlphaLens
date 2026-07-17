@@ -64,16 +64,26 @@ class YFinanceClient:
 
         if not isinstance(data, pd.DataFrame) or data.empty:
             raise YFinanceClientError(f"Yahoo Finance returned no daily data for {symbol.upper()}")
-        if isinstance(data.columns, pd.MultiIndex):
-            # yfinance can return a MultiIndex even for one ticker, depending on version.
-            ticker_levels = data.columns.get_level_values(-1).unique()
-            if len(ticker_levels) != 1:
-                raise YFinanceClientError("Yahoo Finance returned multiple tickers for a single-symbol request")
-            data.columns = data.columns.get_level_values(0)
         required = {"Open", "High", "Low", "Close", "Volume"}
+        if isinstance(data.columns, pd.MultiIndex):
+            # yfinance versions differ: either (Price, Ticker) or (Ticker, Price).
+            ohlcv_level = next(
+                (
+                    level
+                    for level in range(data.columns.nlevels)
+                    if required.issubset(set(data.columns.get_level_values(level)))
+                ),
+                None,
+            )
+            if ohlcv_level is None:
+                raise YFinanceClientError("Yahoo Finance response does not contain complete daily OHLCV data")
+            ticker_level = 1 - ohlcv_level if data.columns.nlevels == 2 else None
+            if ticker_level is not None and len(data.columns.get_level_values(ticker_level).unique()) != 1:
+                raise YFinanceClientError("Yahoo Finance returned multiple tickers for a single-symbol request")
+            data.columns = data.columns.get_level_values(ohlcv_level)
         if not required.issubset(data.columns):
             raise YFinanceClientError("Yahoo Finance response does not contain complete daily OHLCV data")
-
+        data = data[["Open", "High", "Low", "Close", "Volume"]]
         data = data.rename(columns={
             "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume",
         })

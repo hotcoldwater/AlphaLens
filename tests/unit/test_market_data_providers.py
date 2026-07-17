@@ -75,6 +75,29 @@ def test_yfinance_client_flattens_single_ticker_multiindex_columns(monkeypatch):
     assert data.loc["2024-01-02", "close"] == 101
 
 
+def test_yfinance_client_flattens_ticker_first_multiindex_columns(monkeypatch):
+    module = ModuleType("yfinance")
+
+    def download(*args, **kwargs):
+        return pd.DataFrame(
+            [[100.0, 102.0, 99.0, 101.0, 1000]],
+            columns=pd.MultiIndex.from_tuples([
+                ("GLD", "Open"), ("GLD", "High"), ("GLD", "Low"),
+                ("GLD", "Close"), ("GLD", "Volume"),
+            ]),
+            index=pd.to_datetime(["2024-01-02"]),
+        )
+
+    module.download = download
+    monkeypatch.setitem(sys.modules, "yfinance", module)
+
+    data, _ = YFinanceClient().fetch_daily_ohlcv(
+        "GLD", date(2024, 1, 2), date(2024, 1, 2), True
+    )
+
+    assert data.loc["2024-01-02", "close"] == 101
+
+
 def test_pykrx_client_normalizes_download(monkeypatch):
     module = ModuleType("pykrx")
 
