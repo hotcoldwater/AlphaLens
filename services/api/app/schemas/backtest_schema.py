@@ -91,7 +91,13 @@ class BacktestRequest(BaseModel):
             return self
         if not self.data:
             raise ValueError("single-stock strategy requires data")
-        if self.data_by_symbol is not None:
+        signal_symbols = self.strategy.signal_symbols()
+        if signal_symbols:
+            provided = {symbol.upper() for symbol in (self.data_by_symbol or {})}
+            missing = signal_symbols - provided
+            if missing:
+                raise ValueError(f"missing signal data for {', '.join(sorted(missing))}")
+        elif self.data_by_symbol is not None:
             raise ValueError("single-stock strategy does not accept data_by_symbol")
         return self
 

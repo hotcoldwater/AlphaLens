@@ -37,7 +37,34 @@ def execute_backtest(request: BacktestRequest) -> BacktestExecution:
     ]
     if data.empty:
         raise ValueError("no market data exists within strategy period")
-    entry_signal, exit_signal = generate_strategy_signals(data, request.strategy)
+
+    signal_symbols = request.strategy.signal_symbols()
+    signal_data: dict[str, pd.DataFrame] | None = None
+    if signal_symbols:
+        assert request.data_by_symbol is not None
+        signal_data = {}
+        common_index = data.index
+        for symbol in signal_symbols:
+            bars = request.data_by_symbol[symbol.upper()]
+            frame = pd.DataFrame([bar.model_dump() for bar in bars])
+            frame["date"] = pd.to_datetime(frame["date"])
+            frame = validate_ohlcv(frame.set_index("date"))
+            frame = frame.loc[
+                (frame.index.date >= request.strategy.period.start_date)
+                & (frame.index.date <= request.strategy.period.end_date)
+            ]
+            signal_data[symbol] = frame
+            common_index = common_index.intersection(frame.index)
+        common_index = common_index.sort_values()
+        if len(common_index) < 2:
+            raise ValueError(
+                "cross-asset condition requires at least two common trading dates "
+                f"between {request.strategy.universe.symbols[0]} and {', '.join(sorted(signal_symbols))}"
+            )
+        data = data.loc[common_index]
+        signal_data = {symbol: frame.loc[common_index] for symbol, frame in signal_data.items()}
+
+    entry_signal, exit_signal = generate_strategy_signals(data, request.strategy, signal_data)
     benchmark_curve = buy_and_hold_equity_curve(data["close"], float(request.strategy.capital.initial_cash))
     return BacktestExecution(
         result=run_backtest(data, entry_signal, exit_signal, request.strategy),

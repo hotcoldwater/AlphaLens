@@ -13,7 +13,9 @@ class UniverseType(StrEnum):
 
 
 class RebalanceFrequency(StrEnum):
+    WEEKLY = "WEEKLY"
     MONTHLY = "MONTHLY"
+    QUARTERLY = "QUARTERLY"
 
 
 class DataTimeframe(StrEnum):

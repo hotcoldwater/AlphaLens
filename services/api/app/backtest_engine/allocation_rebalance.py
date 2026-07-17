@@ -3,6 +3,7 @@ from math import floor
 
 import pandas as pd
 
+from ..enums.strategy_types import RebalanceFrequency
 from ..schemas.strategy_schema import AllocationRebalanceStrategy
 from .engine import BacktestResult, Trade
 from .metrics import annualized_volatility, sharpe_ratio
@@ -16,10 +17,20 @@ class Holding:
     entry_cost: float = 0.0
 
 
+def _rebalance_period_key(index: pd.Timestamp, frequency: RebalanceFrequency) -> tuple[int, int]:
+    """Return a (year, period) key that changes whenever a new rebalance window starts."""
+    if frequency == RebalanceFrequency.WEEKLY:
+        year, week, _ = index.isocalendar()
+        return (int(year), int(week))
+    if frequency == RebalanceFrequency.QUARTERLY:
+        return (index.year, (index.month - 1) // 3)
+    return (index.year, index.month)
+
+
 def run_allocation_rebalance_backtest(
     data_by_symbol: dict[str, pd.DataFrame], strategy: AllocationRebalanceStrategy
 ) -> BacktestResult:
-    """Run fixed target weights with first-common-session monthly rebalancing."""
+    """Run fixed target weights with first-common-session rebalancing at the configured frequency."""
     aligned = _align_data(data_by_symbol, strategy)
     weights = {item.symbol: item.weight for item in strategy.target_allocations}
     holdings = {symbol: Holding() for symbol in strategy.universe.symbols}
@@ -28,17 +39,17 @@ def run_allocation_rebalance_backtest(
     total_cost = 0.0
     trades: list[Trade] = []
     equity_values: list[float] = []
-    previous_month: tuple[int, int] | None = None
+    previous_period: tuple[int, int] | None = None
 
     for index in next(iter(aligned.values())).index:
-        month = (index.year, index.month)
-        if previous_month is None or month != previous_month:
+        period = _rebalance_period_key(index, strategy.rebalance.frequency)
+        if previous_period is None or period != previous_period:
             cash, rebalance_cost, completed = _rebalance(
                 index, aligned, holdings, cash, weights, strategy
             )
             total_cost += rebalance_cost
             trades.extend(completed)
-            previous_month = month
+            previous_period = period
         equity_values.append(cash + sum(
             holding.quantity * float(aligned[symbol].loc[index, "close"])
             for symbol, holding in holdings.items()

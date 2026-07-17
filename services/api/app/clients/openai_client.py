@@ -25,11 +25,20 @@ Rules:
 - Default market is KRX, daily timeframe, adjusted prices, and KRW only when the
   user does not specify a market or a US stock.
 - The result is a draft only. It must always require user confirmation before execution.
+- For a single-stock strategy whose entry/exit condition is signaled by a different symbol
+  (for example "buy Samsung Electronics when the KOSPI index falls"), keep strategy_type
+  SINGLE_STOCK with universe symbols containing only the traded stock, and set the `symbol`
+  field on the relevant IndicatorReference (left or right operand) to the signal symbol
+  (for example KOSPI index ticker). Do not silently evaluate the condition against the
+  traded stock's own data when the user named a different signal asset.
 - For a two-asset full-allocation switch such as "when SPY is below SMA 30, hold GLD",
   return strategy_type REGIME_SWITCH with exactly two symbols, default_symbol, and switch_rule.
 - For a fixed multi-asset allocation request such as "hold SPY 60% and GLD 40%, rebalanced monthly",
   return strategy_type ALLOCATION_REBALANCE with 2 to 5 symbols, target_allocations whose weights
-  sum to 1 or less, and rebalance frequency MONTHLY. Unallocated weight remains cash.
+  sum to 1 or less, and a rebalance frequency. Unallocated weight remains cash.
+- Rebalance frequency must be one of WEEKLY, MONTHLY, or QUARTERLY. Map "weekly"/"주간"/"매주" to
+  WEEKLY, "monthly"/"월간"/"매월" to MONTHLY, and "quarterly"/"분기"/"분기별" to QUARTERLY.
+  Default to MONTHLY only when the user does not specify a rebalancing cadence.
 - Do not rewrite an unsupported multi-asset, portfolio, or allocation request as a cash or
   single-stock strategy. Instead, return the closest safe draft only when representable and
   clearly add the unsupported intent to warnings and missing_fields.

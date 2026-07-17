@@ -15,25 +15,36 @@ from .signals import cross_above, cross_below
 
 
 def generate_strategy_signals(
-    data: pd.DataFrame, strategy: Strategy
+    data: pd.DataFrame, strategy: Strategy, signal_data: dict[str, pd.DataFrame] | None = None
 ) -> tuple[pd.Series, pd.Series]:
-    """Compile the supported Strategy rules into entry and exit Boolean series."""
-    return evaluate_rules(data, strategy.entry_rules), evaluate_rules(data, strategy.exit_rules)
+    """Compile the supported Strategy rules into entry and exit Boolean series.
+
+    `signal_data` supplies OHLCV for any symbol an IndicatorReference references
+    via its optional `symbol` field, other than the strategy's own traded data.
+    """
+    return (
+        evaluate_rules(data, strategy.entry_rules, signal_data),
+        evaluate_rules(data, strategy.exit_rules, signal_data),
+    )
 
 
-def evaluate_rules(data: pd.DataFrame, rules: RuleSet) -> pd.Series:
+def evaluate_rules(
+    data: pd.DataFrame, rules: RuleSet, signal_data: dict[str, pd.DataFrame] | None = None
+) -> pd.Series:
     if data.empty:
         raise ValueError("data must not be empty")
-    results = [evaluate_condition(data, condition) for condition in rules.conditions]
+    results = [evaluate_condition(data, condition, signal_data) for condition in rules.conditions]
     combined = results[0]
     for result in results[1:]:
         combined = combined & result if rules.logic == LogicType.AND else combined | result
     return combined.fillna(False).astype(bool)
 
 
-def evaluate_condition(data: pd.DataFrame, condition: Condition) -> pd.Series:
-    left = _resolve_operand(data, condition.left)
-    right = _resolve_operand(data, condition.right)
+def evaluate_condition(
+    data: pd.DataFrame, condition: Condition, signal_data: dict[str, pd.DataFrame] | None = None
+) -> pd.Series:
+    left = _resolve_operand(data, condition.left, signal_data)
+    right = _resolve_operand(data, condition.right, signal_data)
     comparisons = {
         OperatorType.GREATER_THAN: operator_module.gt,
         OperatorType.GREATER_THAN_OR_EQUAL: operator_module.ge,
@@ -53,11 +64,18 @@ def evaluate_condition(data: pd.DataFrame, condition: Condition) -> pd.Series:
 
 
 def _resolve_operand(
-    data: pd.DataFrame, operand: IndicatorReference | ValueReference
+    data: pd.DataFrame,
+    operand: IndicatorReference | ValueReference,
+    signal_data: dict[str, pd.DataFrame] | None = None,
 ) -> pd.Series:
     if isinstance(operand, ValueReference):
         return pd.Series(float(operand.value), index=data.index)
-    return _indicator_series(data, operand)
+    frame = data
+    if signal_data is not None and operand.symbol is not None:
+        if operand.symbol not in signal_data:
+            raise ValueError(f"missing signal data for {operand.symbol}")
+        frame = signal_data[operand.symbol]
+    return _indicator_series(frame, operand)
 
 
 def _indicator_series(data: pd.DataFrame, reference: IndicatorReference) -> pd.Series:

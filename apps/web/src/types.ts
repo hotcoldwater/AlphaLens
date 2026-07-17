@@ -89,6 +89,7 @@ export type IndicatorReference = {
   type: "INDICATOR";
   indicator: string;
   period?: number | null;
+  symbol?: string | null;
 };
 
 export type ValueReference = {
@@ -150,7 +151,7 @@ export type AllocationRebalanceStrategy = {
   period: { start_date: string; end_date: string };
   data: { timeframe: string; adjusted_price: boolean };
   target_allocations: { symbol: string; weight: number }[];
-  rebalance: { frequency: "MONTHLY" };
+  rebalance: { frequency: "WEEKLY" | "MONTHLY" | "QUARTERLY" };
   execution: { signal_time: string; execution_time: string };
   costs: { commission_rate: number; slippage_rate: number; tax_rate: number };
   capital: { initial_cash: number; currency: string };

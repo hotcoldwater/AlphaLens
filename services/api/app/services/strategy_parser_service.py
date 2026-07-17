@@ -37,10 +37,10 @@ class StrategyParserService:
         if requires_external_signal_support(raw_input, result.strategy):
             result.needs_clarification = True
             result.warnings.append(
-                "KOSPI·KOSDAQ 등 별도 지수의 신호로 개별 종목을 매매하는 전략은 아직 지원하지 않습니다. "
-                "지수 신호를 주문 종목으로 대체해 실행하지 않습니다."
+                "요청에 KOSPI·KOSDAQ 등 별도 지수를 신호로 쓰려는 의도가 있지만, 신호 종목이 "
+                "주문 종목과 분리되어 해석되지 않았습니다. 조건의 신호 종목을 다시 확인하세요."
             )
-            result.missing_fields.append("신호 종목과 주문 종목을 분리하는 전략 지원이 필요")
+            result.missing_fields.append("신호 종목과 주문 종목을 분리하는 조건 확인")
         return result
 
 
@@ -57,14 +57,18 @@ def _requests_allocation(raw_input: str) -> bool:
 def requires_external_signal_support(
     raw_input: str, strategy: StrategyDefinition,
 ) -> bool:
-    """Return True when an index is used as a signal for a separate trade asset.
+    """Return True when the request implies an index signal but the parsed
+    strategy's conditions do not actually reference a separate signal symbol.
 
-    The current single-stock engine evaluates every condition from the traded
-    symbol's OHLCV. Treating an explicit market-index signal as that symbol's
-    return silently changes the requested strategy, so it must be blocked until
-    a separate signal-asset schema and engine are available.
+    The single-stock engine can evaluate a condition against a different
+    symbol's OHLCV via IndicatorReference.symbol (see Strategy.signal_symbols()).
+    If the model mentions an index but failed to set that field, the condition
+    would silently fall back to the traded symbol's own data, so this must be
+    flagged for user confirmation instead of executed as-is.
     """
     if isinstance(strategy, (RegimeSwitchStrategy, AllocationRebalanceStrategy)):
+        return False
+    if strategy.signal_symbols():
         return False
     text = raw_input.lower()
     index_reference = any(

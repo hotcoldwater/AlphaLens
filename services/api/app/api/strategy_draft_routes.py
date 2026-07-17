@@ -56,8 +56,8 @@ def backtest_confirmed_draft(
         raise HTTPException(
             status_code=409,
             detail=(
-                "KOSPI·KOSDAQ 등 별도 지수 신호로 다른 종목을 매매하는 전략은 아직 "
-                "지원하지 않습니다. 지수 신호를 주문 종목의 신호로 바꿔 실행하지 않습니다."
+                "요청에 KOSPI·KOSDAQ 등 별도 지수를 신호로 쓰려는 의도가 있지만, 신호 종목이 "
+                "주문 종목과 분리되어 해석되지 않았습니다. 조건을 수정한 뒤 다시 확정하세요."
             ),
         )
     if draft.status.value != "CONFIRMED":

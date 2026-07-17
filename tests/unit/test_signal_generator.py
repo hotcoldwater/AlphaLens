@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from services.api.app.backtest_engine.signal_generator import (
     evaluate_condition,
@@ -58,3 +59,32 @@ def test_indicator_with_insufficient_history_is_false():
         {"left": {"indicator": "SMA", "period": 20}, "operator": "GREATER_THAN", "right": {"value": 0}}
     )
     assert not evaluate_condition(data, condition).any()
+
+
+def test_condition_with_symbol_reads_from_signal_data_not_primary_data():
+    from services.api.app.schemas.strategy_schema import Condition
+
+    data = sample_ohlcv()
+    signal_frame = data.copy()
+    signal_frame["close"] = 0.0  # signal symbol never trades above 0
+
+    condition = Condition.model_validate(
+        {"left": {"indicator": "CLOSE", "symbol": "KOSPI"}, "operator": "GREATER_THAN", "right": {"value": 0}}
+    )
+    result = evaluate_condition(data, condition, signal_data={"KOSPI": signal_frame})
+    assert not result.any()
+
+    # Without signal_data, the operand.symbol is ignored and the primary frame is used.
+    fallback = evaluate_condition(data, condition)
+    assert fallback.any()
+
+
+def test_condition_with_unknown_signal_symbol_raises():
+    from services.api.app.schemas.strategy_schema import Condition
+
+    data = sample_ohlcv()
+    condition = Condition.model_validate(
+        {"left": {"indicator": "CLOSE", "symbol": "KOSPI"}, "operator": "GREATER_THAN", "right": {"value": 0}}
+    )
+    with pytest.raises(ValueError, match="missing signal data for KOSPI"):
+        evaluate_condition(data, condition, signal_data={})

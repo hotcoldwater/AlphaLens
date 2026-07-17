@@ -23,6 +23,7 @@ class IndicatorReference(BaseModel):
     type: str = Field(default="INDICATOR", pattern="^INDICATOR$")
     indicator: IndicatorType
     period: PositivePeriod | None = None
+    symbol: str | None = Field(default=None, min_length=1, max_length=32)
 
     @model_validator(mode="after")
     def validate_period(self) -> "IndicatorReference":
@@ -33,6 +34,12 @@ class IndicatorReference(BaseModel):
         }
         if needs_period and self.period is None:
             raise ValueError(f"{self.indicator} requires period")
+        return self
+
+    @model_validator(mode="after")
+    def normalize_symbol(self) -> "IndicatorReference":
+        if self.symbol is not None:
+            self.symbol = self.symbol.upper()
         return self
 
 
@@ -170,6 +177,21 @@ class Strategy(BaseModel):
     capital: Capital
     benchmark: str | None = None
 
+    def signal_symbols(self) -> set[str]:
+        """Symbols referenced by entry/exit conditions other than the traded symbol."""
+        traded_symbol = self.universe.symbols[0]
+        operands = [
+            operand
+            for rules in (self.entry_rules, self.exit_rules)
+            for condition in rules.conditions
+            for operand in (condition.left, condition.right)
+        ]
+        return {
+            operand.symbol
+            for operand in operands
+            if isinstance(operand, IndicatorReference) and operand.symbol and operand.symbol != traded_symbol
+        }
+
 
 class RegimeSwitchRule(BaseModel):
     """When the signal is true, move the full portfolio to target_symbol."""
@@ -239,7 +261,7 @@ class RebalanceConfig(BaseModel):
 
 
 class AllocationRebalanceStrategy(BaseModel):
-    """Long-only fixed target weights, rebalanced at the first common session monthly."""
+    """Long-only fixed target weights, rebalanced at the first common session of each period."""
 
     model_config = ConfigDict(extra="forbid")
     strategy_type: str = Field(default="ALLOCATION_REBALANCE", pattern="^ALLOCATION_REBALANCE$")

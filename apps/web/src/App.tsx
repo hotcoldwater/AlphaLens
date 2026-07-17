@@ -20,6 +20,7 @@ import type {
   AllocationRebalanceStrategy,
   Condition,
   EquityPoint,
+  IndicatorReference,
   OHLCVBar,
   MarketSymbol,
   MarketDataSource,
@@ -102,9 +103,9 @@ function parseCsv(text: string): OHLCVBar[] {
 }
 
 function operandLabel(operand: Condition["left"]) {
-  return operand.type === "VALUE"
-    ? String(operand.value)
-    : `${operand.indicator} ${operand.period ?? ""}`.trim();
+  if (operand.type === "VALUE") return String(operand.value);
+  const label = `${operand.indicator} ${operand.period ?? ""}`.trim();
+  return operand.symbol ? `${operand.symbol} ${label}` : label;
 }
 function conditionLabel(condition: Condition) {
   return `${operandLabel(condition.left)} ${condition.operator.replace("CROSS_ABOVE", "상향 돌파").replace("CROSS_BELOW", "하향 돌파")} ${operandLabel(condition.right)}`;
@@ -122,6 +123,19 @@ function isMultiAsset(strategy: Strategy) {
   return isRegimeSwitch(strategy) || isAllocationRebalance(strategy);
 }
 
+function strategySignalSymbols(strategy: Strategy): string[] {
+  if (isMultiAsset(strategy)) return [];
+  const tradedSymbol = strategy.universe.symbols[0];
+  const operands = [strategy.entry_rules, strategy.exit_rules].flatMap((rules) =>
+    rules.conditions.flatMap((condition) => [condition.left, condition.right]),
+  );
+  const symbols = operands
+    .filter((operand): operand is IndicatorReference => operand.type === "INDICATOR")
+    .map((operand) => operand.symbol)
+    .filter((symbol): symbol is string => Boolean(symbol) && symbol !== tradedSymbol);
+  return [...new Set(symbols)];
+}
+
 function strategyEditIssue(strategy: Strategy): string | null {
   if (strategy.period.start_date > strategy.period.end_date)
     return "시작일은 종료일보다 늦을 수 없습니다.";
@@ -130,6 +144,11 @@ function strategyEditIssue(strategy: Strategy): string | null {
   if ([strategy.costs.commission_rate, strategy.costs.slippage_rate, strategy.costs.tax_rate]
     .some((value) => !Number.isFinite(value) || value < 0))
     return "수수료·슬리피지·세율은 모두 0 이상이어야 합니다.";
+  const symbols = strategy.universe.symbols;
+  if (symbols.some((symbol) => !symbol.trim()))
+    return "종목 코드는 비워둘 수 없습니다.";
+  if (new Set(symbols.map((symbol) => symbol.toUpperCase())).size !== symbols.length)
+    return "종목 코드는 서로 달라야 합니다.";
   if (isAllocationRebalance(strategy)) {
     const total = strategy.target_allocations.reduce((sum, item) => sum + item.weight, 0);
     if (!Number.isFinite(total) || total <= 0 || total > 1 + 1e-9)
@@ -149,6 +168,8 @@ function strategyEditIssue(strategy: Strategy): string | null {
 
 function strategyEditChanges(original: Strategy, next: Strategy): string[] {
   const changes: string[] = [];
+  if (original.universe.symbols.join(",") !== next.universe.symbols.join(","))
+    changes.push(`종목 ${original.universe.symbols.join(", ")} → ${next.universe.symbols.join(", ")}`);
   if (original.period.start_date !== next.period.start_date || original.period.end_date !== next.period.end_date)
     changes.push(`기간 ${original.period.start_date}~${original.period.end_date} → ${next.period.start_date}~${next.period.end_date}`);
   if (original.capital.initial_cash !== next.capital.initial_cash)
@@ -163,6 +184,8 @@ function strategyEditChanges(original: Strategy, next: Strategy): string[] {
       if (before !== undefined && before !== item.weight)
         changes.push(`${item.symbol} 비중 ${(before * 100).toFixed(0)}% → ${(item.weight * 100).toFixed(0)}%`);
     });
+    if (original.rebalance.frequency !== next.rebalance.frequency)
+      changes.push(`리밸런싱 주기 ${rebalanceFrequencyLabel(original.rebalance.frequency)} → ${rebalanceFrequencyLabel(next.rebalance.frequency)}`);
   }
   if (!isMultiAsset(original) && !isMultiAsset(next)) {
     (["stop_loss", "take_profit", "maximum_holding_days"] as const).forEach((key) => {
@@ -187,12 +210,20 @@ function multiAssetDataIssue(
   return null;
 }
 
+function rebalanceFrequencyLabel(frequency: "WEEKLY" | "MONTHLY" | "QUARTERLY") {
+  return { WEEKLY: "주간", MONTHLY: "월간", QUARTERLY: "분기" }[frequency];
+}
+
+function rebalanceScheduleLabel(frequency: "WEEKLY" | "MONTHLY" | "QUARTERLY") {
+  return { WEEKLY: "매주", MONTHLY: "매월", QUARTERLY: "매분기" }[frequency];
+}
+
 function strategyRuleSummary(strategy: Strategy) {
   if (isRegimeSwitch(strategy)) {
     return `${strategy.switch_rule.signal_symbol}: ${conditionLabel(strategy.switch_rule.condition)} → ${strategy.switch_rule.target_symbol}`;
   }
   if (isAllocationRebalance(strategy)) {
-    return `${strategy.target_allocations.map((item) => `${item.symbol} ${(item.weight * 100).toFixed(0)}%`).join(" / ")} · 월간 리밸런싱`;
+    return `${strategy.target_allocations.map((item) => `${item.symbol} ${(item.weight * 100).toFixed(0)}%`).join(" / ")} · ${rebalanceFrequencyLabel(strategy.rebalance.frequency)} 리밸런싱`;
   }
   return `${strategy.entry_rules.conditions.map(conditionLabel).join(" / ")} | ${strategy.exit_rules.conditions.map(conditionLabel).join(" / ")}`;
 }
@@ -200,9 +231,11 @@ function strategyRuleSummary(strategy: Strategy) {
 function ConditionFields({
   condition,
   onChange,
+  allowSymbol = false,
 }: {
   condition: Condition;
   onChange: (condition: Condition) => void;
+  allowSymbol?: boolean;
 }) {
   const updateIndicator = (side: "left" | "right", indicator: string) => {
     const operand = { type: "INDICATOR" as const, indicator, period: indicator === "SMA" || indicator === "EMA" || indicator === "RSI" ? 20 : null };
@@ -212,6 +245,11 @@ function ConditionFields({
     const current = condition[side];
     if (current.type !== "INDICATOR") return;
     onChange({ ...condition, [side]: { ...current, period: value } });
+  };
+  const updateSymbol = (side: "left" | "right", symbol: string) => {
+    const current = condition[side];
+    if (current.type !== "INDICATOR") return;
+    onChange({ ...condition, [side]: { ...current, symbol: symbol.trim() ? symbol.trim().toUpperCase() : null } });
   };
   const renderOperand = (side: "left" | "right") => {
     const operand = condition[side];
@@ -236,26 +274,18 @@ function ConditionFields({
         ) : ["SMA", "EMA", "RSI"].includes(operand.indicator) ? (
           <input type="number" min="1" value={operand.period ?? 20} onChange={(event) => updatePeriod(side, Number(event.target.value))} />
         ) : null}
+        {allowSymbol && operand.type === "INDICATOR" && (
+          <input
+            className="condition-symbol"
+            placeholder="신호 종목(선택, 예: KOSPI)"
+            value={operand.symbol ?? ""}
+            onChange={(event) => updateSymbol(side, event.target.value)}
+          />
+        )}
       </label>
     );
   };
   return <div className="condition-fields">{renderOperand("left")}<label>연산자<select value={condition.operator} onChange={(event) => onChange({ ...condition, operator: event.target.value })}><option value="CROSS_ABOVE">상향 돌파</option><option value="CROSS_BELOW">하향 돌파</option><option value="GREATER_THAN">초과</option><option value="LESS_THAN">미만</option><option value="GREATER_THAN_OR_EQUAL">이상</option><option value="LESS_THAN_OR_EQUAL">이하</option><option value="EQUAL">같음</option></select></label>{renderOperand("right")}</div>;
-}
-
-function LegacyStrategyEditor({ strategy, onChange, onCancel, onSave, saving }: { strategy: Strategy; onChange: (strategy: Strategy) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
-  const update = (patch: Partial<Strategy>) => onChange({ ...strategy, ...patch } as Strategy);
-  const setCondition = (condition: Condition, kind: "entry" | "exit" | "switch") => {
-    if (kind === "switch" && isRegimeSwitch(strategy)) onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, condition } });
-    else if (!isMultiAsset(strategy)) {
-      const key = kind === "entry" ? "entry_rules" : "exit_rules";
-      onChange({ ...strategy, [key]: { ...strategy[key], conditions: [condition, ...strategy[key].conditions.slice(1)] } });
-    }
-  };
-  const updateWeight = (symbol: string, weight: number) => {
-    if (!isAllocationRebalance(strategy)) return;
-    onChange({ ...strategy, target_allocations: strategy.target_allocations.map((item) => item.symbol === symbol ? { ...item, weight } : item) });
-  };
-  return <section className="editor-card"><div><span className="panel-kicker">EDIT STRATEGY</span><h2>전략 초안 수정</h2><p>폼에서 값과 조건을 수정합니다. 저장 시 서버가 전략 규칙을 다시 검증합니다.</p></div><div className="strategy-form"><label>전략 이름<input value={strategy.strategy_name} onChange={(event) => update({ strategy_name: event.target.value })} /></label><label>시작일<input type="date" value={strategy.period.start_date} onChange={(event) => update({ period: { ...strategy.period, start_date: event.target.value } })} /></label><label>종료일<input type="date" value={strategy.period.end_date} onChange={(event) => update({ period: { ...strategy.period, end_date: event.target.value } })} /></label><label>초기 자본<input type="number" min="1" value={strategy.capital.initial_cash} onChange={(event) => update({ capital: { ...strategy.capital, initial_cash: Number(event.target.value) } })} /></label><label>수수료율<input type="number" min="0" step="0.0001" value={strategy.costs.commission_rate} onChange={(event) => update({ costs: { ...strategy.costs, commission_rate: Number(event.target.value) } })} /></label></div>{isRegimeSwitch(strategy) ? <div className="switch-editor"><h3>자산 전환 규칙</h3><div className="strategy-form"><label>기본 보유 자산<select value={strategy.default_symbol} onChange={(event) => onChange({ ...strategy, default_symbol: event.target.value })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>신호 종목<select value={strategy.switch_rule.signal_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, signal_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>조건 충족 시 보유<select value={strategy.switch_rule.target_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, target_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label></div><ConditionFields condition={strategy.switch_rule.condition} onChange={(condition) => setCondition(condition, "switch")} /></div> : isAllocationRebalance(strategy) ? <div className="switch-editor"><h3>목표 비중과 월간 리밸런싱</h3><div className="strategy-form">{strategy.target_allocations.map((item) => <label key={item.symbol}>{item.symbol} 비중<input type="number" min="0.01" max="1" step="0.01" value={item.weight} onChange={(event) => updateWeight(item.symbol, Number(event.target.value))} /></label>)}</div><p>비중 합계가 100%보다 작으면 나머지는 현금으로 유지합니다. 매월 첫 공통 거래일 시가에 리밸런싱합니다.</p></div> : <div className="switch-editor"><h3>매수 조건</h3><ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} /><h3>매도 조건</h3><ConditionFields condition={strategy.exit_rules.conditions[0]} onChange={(condition) => setCondition(condition, "exit")} /></div>}<div className="editor-actions"><button className="cancel-button" onClick={onCancel} disabled={saving}>취소</button><button className="save-button" onClick={onSave} disabled={saving}>{saving ? "검증 및 저장 중..." : "변경 검증 후 저장"}</button></div></section>;
 }
 
 function StrategyEditor({ originalStrategy, strategy, onChange, onCancel, onSave, saving }: { originalStrategy: Strategy; strategy: Strategy; onChange: (strategy: Strategy) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
@@ -282,15 +312,45 @@ function StrategyEditor({ originalStrategy, strategy, onChange, onCancel, onSave
       onChange({ ...strategy, [key]: { ...strategy[key], conditions: [condition, ...strategy[key].conditions.slice(1)] } });
     }
   };
+  const renameSymbol = (index: number, value: string) => {
+    const upper = value.toUpperCase();
+    const oldSymbol = strategy.universe.symbols[index];
+    const symbols = strategy.universe.symbols.map((symbol, i) => (i === index ? upper : symbol));
+    if (isRegimeSwitch(strategy)) {
+      const swapRef = (ref: string) => (ref === oldSymbol ? upper : ref);
+      onChange({
+        ...strategy,
+        universe: { ...strategy.universe, symbols: symbols as [string, string] },
+        default_symbol: swapRef(strategy.default_symbol),
+        switch_rule: {
+          ...strategy.switch_rule,
+          signal_symbol: swapRef(strategy.switch_rule.signal_symbol),
+          target_symbol: swapRef(strategy.switch_rule.target_symbol),
+        },
+      });
+    } else if (isAllocationRebalance(strategy)) {
+      onChange({
+        ...strategy,
+        universe: { ...strategy.universe, symbols },
+        target_allocations: strategy.target_allocations.map((item) =>
+          item.symbol === oldSymbol ? { ...item, symbol: upper } : item,
+        ),
+      });
+    } else {
+      onChange({ ...strategy, universe: { ...strategy.universe, symbols } });
+    }
+  };
 
   return <section className="editor-card">
     <div>
       <span className="panel-kicker">EDIT STRATEGY</span>
       <h2>전략 초안 수정</h2>
       <p>수정 내용은 저장 전에 즉시 검증합니다.</p>
+      <p className="editor-live-summary">현재 규칙: {strategyRuleSummary(strategy)}</p>
     </div>
     <div className="strategy-form">
       <label>전략 이름<input value={strategy.strategy_name} onChange={(event) => update({ strategy_name: event.target.value })} /></label>
+      {!isMultiAsset(strategy) && <label>종목 코드<input value={strategy.universe.symbols[0]} onChange={(event) => renameSymbol(0, event.target.value)} /></label>}
       <label>시작일<input type="date" value={strategy.period.start_date} onChange={(event) => update({ period: { ...strategy.period, start_date: event.target.value } })} /></label>
       <label>종료일<input type="date" value={strategy.period.end_date} onChange={(event) => update({ period: { ...strategy.period, end_date: event.target.value } })} /></label>
       <label>초기 자본<input type="number" min="1" value={strategy.capital.initial_cash} onChange={(event) => update({ capital: { ...strategy.capital, initial_cash: Number(event.target.value) } })} /></label>
@@ -306,19 +366,29 @@ function StrategyEditor({ originalStrategy, strategy, onChange, onCancel, onSave
     {isRegimeSwitch(strategy) ? <div className="switch-editor">
       <h3>자산 전환 규칙</h3>
       <div className="strategy-form">
+        <label>종목 A<input value={strategy.universe.symbols[0]} onChange={(event) => renameSymbol(0, event.target.value)} /></label>
+        <label>종목 B<input value={strategy.universe.symbols[1]} onChange={(event) => renameSymbol(1, event.target.value)} /></label>
         <label>기본 보유 자산<select value={strategy.default_symbol} onChange={(event) => onChange({ ...strategy, default_symbol: event.target.value })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label>
         <label>신호 종목<select value={strategy.switch_rule.signal_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, signal_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label>
         <label>조건 충족 시 보유<select value={strategy.switch_rule.target_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, target_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label>
       </div>
       <ConditionFields condition={strategy.switch_rule.condition} onChange={(condition) => setCondition(condition, "switch")} />
     </div> : isAllocationRebalance(strategy) ? <div className="switch-editor">
-      <h3>목표 비중과 월간 리밸런싱</h3>
+      <h3>목표 비중과 리밸런싱</h3>
+      <div className="strategy-form">{strategy.universe.symbols.map((symbol, index) => <label key={index}>종목 {index + 1}<input value={symbol} onChange={(event) => renameSymbol(index, event.target.value)} /></label>)}</div>
       <div className="strategy-form">{strategy.target_allocations.map((item) => <label key={item.symbol}>{item.symbol} 비중<input type="number" min="0.01" max="1" step="0.01" value={item.weight} onChange={(event) => updateWeight(item.symbol, Number(event.target.value))} /></label>)}</div>
-      <p>목표 비중 합계 <strong>{((allocationTotal ?? 0) * 100).toFixed(0)}%</strong>{(allocationTotal ?? 0) < 1 ? ` · 나머지 ${((1 - (allocationTotal ?? 0)) * 100).toFixed(0)}%는 현금으로 유지` : ""}</p>
+      <div className="strategy-form">
+        <label>리밸런싱 주기<select value={strategy.rebalance.frequency} onChange={(event) => onChange({ ...strategy, rebalance: { frequency: event.target.value as "WEEKLY" | "MONTHLY" | "QUARTERLY" } })}>
+          <option value="WEEKLY">매주</option>
+          <option value="MONTHLY">매월</option>
+          <option value="QUARTERLY">매분기</option>
+        </select></label>
+      </div>
+      <p>목표 비중 합계 <strong>{((allocationTotal ?? 0) * 100).toFixed(0)}%</strong>{(allocationTotal ?? 0) < 1 ? ` · 나머지 ${((1 - (allocationTotal ?? 0)) * 100).toFixed(0)}%는 현금으로 유지` : ""} · {rebalanceScheduleLabel(strategy.rebalance.frequency)} 첫 공통 거래일 시가에 리밸런싱</p>
     </div> : <div className="switch-editor">
       <h3>매수·매도 및 위험관리</h3>
-      <ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} />
-      <ConditionFields condition={strategy.exit_rules.conditions[0]} onChange={(condition) => setCondition(condition, "exit")} />
+      <ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} allowSymbol />
+      <ConditionFields condition={strategy.exit_rules.conditions[0]} onChange={(condition) => setCondition(condition, "exit")} allowSymbol />
       <div className="strategy-form">
         <label>손절률<input type="number" min="0.0001" max="1" step="0.01" value={strategy.risk_management.stop_loss ?? ""} onChange={(event) => update({ risk_management: { ...strategy.risk_management, stop_loss: event.target.value ? Number(event.target.value) : null } })} /></label>
         <label>익절률<input type="number" min="0.0001" step="0.01" value={strategy.risk_management.take_profit ?? ""} onChange={(event) => update({ risk_management: { ...strategy.risk_management, take_profit: event.target.value ? Number(event.target.value) : null } })} /></label>
@@ -991,6 +1061,7 @@ function DraftView({
   const [editing, setEditing] = useState(false);
   const [editedStrategy, setEditedStrategy] = useState<Strategy>(draft.strategy);
   const [saving, setSaving] = useState(false);
+  const signalSymbols = strategySignalSymbols(draft.strategy);
   async function readCsv(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1024,7 +1095,7 @@ function DraftView({
   async function loadMarketData() {
     const symbols = isMultiAsset(draft.strategy)
       ? draft.strategy.universe.symbols
-      : [marketSymbol.trim().toUpperCase()];
+      : [marketSymbol.trim().toUpperCase(), ...signalSymbols];
     if (symbols.some((symbol) => !symbol)) {
       setError("종목코드를 입력하세요. 예: AAPL, NVDA, 005930");
       return;
@@ -1052,13 +1123,16 @@ function DraftView({
         })));
         setSource(`${provider} · ${results.map((result) => `${result.symbol} ${result.data_points}개 (${result.data_start_date}~${result.data_end_date})`).join(" / ")} · 공통 거래일에 맞춰 실행`);
       } else {
-        const [result] = results;
+        const [result, ...signalResults] = results;
         setData(result.data);
-        setDataSources([{
-          symbol: result.symbol, provider: result.provider, adjustment: result.adjustment,
-          data_version: result.data_version, collected_at: result.collected_at,
-        }]);
-        setSource(`${provider} · ${result.symbol} · ${result.data_start_date}~${result.data_end_date} · ${result.data_points}개 캔들 · ${result.adjustment}`);
+        setDataBySymbol(Object.fromEntries(signalResults.map((item) => [item.symbol, item.data])));
+        setDataSources(results.map((item) => ({
+          symbol: item.symbol, provider: item.provider, adjustment: item.adjustment,
+          data_version: item.data_version, collected_at: item.collected_at,
+        })));
+        setSource(signalResults.length
+          ? `${provider} · ${result.symbol} ${result.data_points}개 · 신호 종목 ${signalResults.map((item) => `${item.symbol} ${item.data_points}개`).join(", ")}`
+          : `${provider} · ${result.symbol} · ${result.data_start_date}~${result.data_end_date} · ${result.data_points}개 캔들 · ${result.adjustment}`);
       }
     } catch (caught) {
       setError(
@@ -1099,13 +1173,21 @@ function DraftView({
         setError(issue);
         return;
       }
+    } else if (signalSymbols.length) {
+      const missing = signalSymbols.filter((symbol) => !dataBySymbol[symbol]?.length);
+      if (missing.length) {
+        setError(`실행 전에 신호 종목 ${missing.join(", ")}의 가격 데이터를 불러오거나 CSV로 업로드하세요.`);
+        return;
+      }
     }
     setRunning(true);
     setError("");
     try {
       await onRun(isMultiAsset(draft.strategy)
         ? { data_by_symbol: dataBySymbol, data_sources: dataSources }
-        : { data, data_sources: dataSources });
+        : signalSymbols.length
+          ? { data, data_by_symbol: dataBySymbol, data_sources: dataSources }
+          : { data, data_sources: dataSources });
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -1173,7 +1255,7 @@ function DraftView({
             {draft.strategy.period.start_date} ~{" "}
             {draft.strategy.period.end_date}
           </p>
-          {isRegimeSwitch(draft.strategy) ? <><div className="rule-block"><span>기본 보유</span><strong>{draft.strategy.default_symbol} 100%</strong></div><div className="rule-block exit"><span>전환 조건</span><strong>{draft.strategy.switch_rule.signal_symbol} {conditionLabel(draft.strategy.switch_rule.condition)} → {draft.strategy.switch_rule.target_symbol} 100%</strong></div></> : isAllocationRebalance(draft.strategy) ? <><div className="rule-block"><span>목표 비중</span><strong>{draft.strategy.target_allocations.map((item) => `${item.symbol} ${(item.weight * 100).toFixed(0)}%`).join(" / ")}</strong></div><div className="rule-block exit"><span>리밸런싱</span><strong>매월 첫 공통 거래일 시가</strong></div></> : <><div className="rule-block"><span>매수 조건</span>{draft.strategy.entry_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div><div className="rule-block exit"><span>매도 조건</span>{draft.strategy.exit_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div></>}
+          {isRegimeSwitch(draft.strategy) ? <><div className="rule-block"><span>기본 보유</span><strong>{draft.strategy.default_symbol} 100%</strong></div><div className="rule-block exit"><span>전환 조건</span><strong>{draft.strategy.switch_rule.signal_symbol} {conditionLabel(draft.strategy.switch_rule.condition)} → {draft.strategy.switch_rule.target_symbol} 100%</strong></div></> : isAllocationRebalance(draft.strategy) ? <><div className="rule-block"><span>목표 비중</span><strong>{draft.strategy.target_allocations.map((item) => `${item.symbol} ${(item.weight * 100).toFixed(0)}%`).join(" / ")}</strong></div><div className="rule-block exit"><span>리밸런싱</span><strong>{rebalanceScheduleLabel(draft.strategy.rebalance.frequency)} 첫 공통 거래일 시가</strong></div></> : <><div className="rule-block"><span>매수 조건</span>{draft.strategy.entry_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div><div className="rule-block exit"><span>매도 조건</span>{draft.strategy.exit_rules.conditions.map((condition, index) => <strong key={index}>{conditionLabel(condition)}</strong>)}</div></>}
           <p className="capital-line">
             초기 자본{" "}
             <strong>
@@ -1226,6 +1308,12 @@ function DraftView({
             pykrx입니다. FMP는 선택 공급원입니다. CSV는
             `date,open,high,low,close,volume` 헤더가 필요합니다.
           </p>
+          {signalSymbols.length > 0 && (
+            <p className="editor-impact">
+              이 전략의 조건은 {signalSymbols.join(", ")} 신호 종목을 사용합니다. "시장 데이터 불러오기"는
+              거래 종목과 함께 신호 종목 데이터도 자동으로 불러오며, CSV로 올릴 경우 아래에서 종목별로 각각 업로드하세요.
+            </p>
+          )}
         </div>
         <div className="data-actions">
           <div className="fmp-loader">
@@ -1254,7 +1342,12 @@ function DraftView({
             </button>
           </div>
           {symbolResults.length > 0 && <div className="symbol-results">{symbolResults.map((result) => <button key={result.symbol} type="button" onClick={() => { setMarketSymbol(result.symbol); setSymbolResults([]); }}><strong>{result.symbol}</strong> {result.name}</button>)}</div>}
-          {isMultiAsset(draft.strategy) ? draft.strategy.universe.symbols.map((symbol) => <label className="file-button" key={symbol}>{symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>) : <label className="file-button">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>}
+          {isMultiAsset(draft.strategy)
+            ? draft.strategy.universe.symbols.map((symbol) => <label className="file-button" key={symbol}>{symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>)
+            : <>
+              <label className="file-button">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>
+              {signalSymbols.map((symbol) => <label className="file-button" key={symbol}>신호 종목 {symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>)}
+            </>}
         </div>
       </section>
       {error && <p className="error workflow-error">{error}</p>}

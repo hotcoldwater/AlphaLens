@@ -37,3 +37,23 @@ def test_strategy_schema_rejects_indicator_without_period():
     payload["entry_rules"]["conditions"][0]["left"] = {"indicator": "RSI"}
     with pytest.raises(ValidationError):
         Strategy.model_validate(payload)
+
+
+def test_indicator_reference_normalizes_symbol_to_uppercase():
+    payload = valid_strategy()
+    payload["entry_rules"]["conditions"][0]["left"] = {"indicator": "RETURN", "symbol": "kospi"}
+    strategy = Strategy.model_validate(payload)
+    assert strategy.entry_rules.conditions[0].left.symbol == "KOSPI"
+
+
+def test_signal_symbols_excludes_traded_symbol_and_unset_operands():
+    payload = valid_strategy()
+    payload["entry_rules"]["conditions"][0]["left"] = {"indicator": "RETURN", "symbol": "KOSPI"}
+    payload["entry_rules"]["conditions"][0]["right"] = {"indicator": "EMA", "period": 10, "symbol": "005930"}
+    strategy = Strategy.model_validate(payload)
+    assert strategy.signal_symbols() == {"KOSPI"}
+
+
+def test_signal_symbols_empty_when_no_condition_sets_symbol():
+    strategy = Strategy.model_validate(valid_strategy())
+    assert strategy.signal_symbols() == set()
