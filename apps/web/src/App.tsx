@@ -147,6 +147,32 @@ function strategyEditIssue(strategy: Strategy): string | null {
   return null;
 }
 
+function strategyEditChanges(original: Strategy, next: Strategy): string[] {
+  const changes: string[] = [];
+  if (original.period.start_date !== next.period.start_date || original.period.end_date !== next.period.end_date)
+    changes.push(`기간 ${original.period.start_date}~${original.period.end_date} → ${next.period.start_date}~${next.period.end_date}`);
+  if (original.capital.initial_cash !== next.capital.initial_cash)
+    changes.push(`초기 자본 ${formatMoney(original.capital.initial_cash, original.capital.currency)} → ${formatMoney(next.capital.initial_cash, next.capital.currency)}`);
+  (["commission_rate", "slippage_rate", "tax_rate"] as const).forEach((key) => {
+    if (original.costs[key] !== next.costs[key])
+      changes.push(`${key} ${(original.costs[key] * 100).toFixed(2)}% → ${(next.costs[key] * 100).toFixed(2)}%`);
+  });
+  if (isAllocationRebalance(original) && isAllocationRebalance(next)) {
+    next.target_allocations.forEach((item) => {
+      const before = original.target_allocations.find((candidate) => candidate.symbol === item.symbol)?.weight;
+      if (before !== undefined && before !== item.weight)
+        changes.push(`${item.symbol} 비중 ${(before * 100).toFixed(0)}% → ${(item.weight * 100).toFixed(0)}%`);
+    });
+  }
+  if (!isMultiAsset(original) && !isMultiAsset(next)) {
+    (["stop_loss", "take_profit", "maximum_holding_days"] as const).forEach((key) => {
+      if (original.risk_management[key] !== next.risk_management[key])
+        changes.push(`${key} ${String(original.risk_management[key] ?? "미설정")} → ${String(next.risk_management[key] ?? "미설정")}`);
+    });
+  }
+  return changes;
+}
+
 function multiAssetDataIssue(
   symbols: string[],
   dataBySymbol: Record<string, OHLCVBar[]>,
@@ -232,12 +258,13 @@ function LegacyStrategyEditor({ strategy, onChange, onCancel, onSave, saving }: 
   return <section className="editor-card"><div><span className="panel-kicker">EDIT STRATEGY</span><h2>전략 초안 수정</h2><p>폼에서 값과 조건을 수정합니다. 저장 시 서버가 전략 규칙을 다시 검증합니다.</p></div><div className="strategy-form"><label>전략 이름<input value={strategy.strategy_name} onChange={(event) => update({ strategy_name: event.target.value })} /></label><label>시작일<input type="date" value={strategy.period.start_date} onChange={(event) => update({ period: { ...strategy.period, start_date: event.target.value } })} /></label><label>종료일<input type="date" value={strategy.period.end_date} onChange={(event) => update({ period: { ...strategy.period, end_date: event.target.value } })} /></label><label>초기 자본<input type="number" min="1" value={strategy.capital.initial_cash} onChange={(event) => update({ capital: { ...strategy.capital, initial_cash: Number(event.target.value) } })} /></label><label>수수료율<input type="number" min="0" step="0.0001" value={strategy.costs.commission_rate} onChange={(event) => update({ costs: { ...strategy.costs, commission_rate: Number(event.target.value) } })} /></label></div>{isRegimeSwitch(strategy) ? <div className="switch-editor"><h3>자산 전환 규칙</h3><div className="strategy-form"><label>기본 보유 자산<select value={strategy.default_symbol} onChange={(event) => onChange({ ...strategy, default_symbol: event.target.value })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>신호 종목<select value={strategy.switch_rule.signal_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, signal_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label><label>조건 충족 시 보유<select value={strategy.switch_rule.target_symbol} onChange={(event) => onChange({ ...strategy, switch_rule: { ...strategy.switch_rule, target_symbol: event.target.value } })}>{strategy.universe.symbols.map((symbol) => <option key={symbol}>{symbol}</option>)}</select></label></div><ConditionFields condition={strategy.switch_rule.condition} onChange={(condition) => setCondition(condition, "switch")} /></div> : isAllocationRebalance(strategy) ? <div className="switch-editor"><h3>목표 비중과 월간 리밸런싱</h3><div className="strategy-form">{strategy.target_allocations.map((item) => <label key={item.symbol}>{item.symbol} 비중<input type="number" min="0.01" max="1" step="0.01" value={item.weight} onChange={(event) => updateWeight(item.symbol, Number(event.target.value))} /></label>)}</div><p>비중 합계가 100%보다 작으면 나머지는 현금으로 유지합니다. 매월 첫 공통 거래일 시가에 리밸런싱합니다.</p></div> : <div className="switch-editor"><h3>매수 조건</h3><ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} /><h3>매도 조건</h3><ConditionFields condition={strategy.exit_rules.conditions[0]} onChange={(condition) => setCondition(condition, "exit")} /></div>}<div className="editor-actions"><button className="cancel-button" onClick={onCancel} disabled={saving}>취소</button><button className="save-button" onClick={onSave} disabled={saving}>{saving ? "검증 및 저장 중..." : "변경 검증 후 저장"}</button></div></section>;
 }
 
-function StrategyEditor({ strategy, onChange, onCancel, onSave, saving }: { strategy: Strategy; onChange: (strategy: Strategy) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
+function StrategyEditor({ originalStrategy, strategy, onChange, onCancel, onSave, saving }: { originalStrategy: Strategy; strategy: Strategy; onChange: (strategy: Strategy) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
   const update = (patch: Partial<Strategy>) => onChange({ ...strategy, ...patch } as Strategy);
   const issue = strategyEditIssue(strategy);
   const allocationTotal = isAllocationRebalance(strategy)
     ? strategy.target_allocations.reduce((sum, item) => sum + item.weight, 0)
     : null;
+  const changes = strategyEditChanges(originalStrategy, strategy);
   const updateCost = (key: "commission_rate" | "slippage_rate" | "tax_rate", value: number) =>
     update({ costs: { ...strategy.costs, [key]: value } });
   const updateWeight = (symbol: string, weight: number) => {
@@ -272,6 +299,10 @@ function StrategyEditor({ strategy, onChange, onCancel, onSave, saving }: { stra
       <label>세율<input type="number" min="0" step="0.0001" value={strategy.costs.tax_rate} onChange={(event) => updateCost("tax_rate", Number(event.target.value))} /></label>
     </div>
     <p className="editor-impact">비용이 높아질수록 모든 매수·매도 체결가와 최종 성과에 불리하게 반영됩니다.</p>
+    <div className="editor-change-summary">
+      <h3>수정 영향 미리보기</h3>
+      {changes.length ? <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul> : <p>아직 변경된 값이 없습니다.</p>}
+    </div>
     {isRegimeSwitch(strategy) ? <div className="switch-editor">
       <h3>자산 전환 규칙</h3>
       <div className="strategy-form">
@@ -1183,7 +1214,7 @@ function DraftView({
           )}
         </aside>
       </section>
-      {editing && <StrategyEditor strategy={editedStrategy} onChange={setEditedStrategy} onCancel={cancelEdit} onSave={saveStrategy} saving={saving} />}
+      {editing && <StrategyEditor originalStrategy={draft.strategy} strategy={editedStrategy} onChange={setEditedStrategy} onCancel={cancelEdit} onSave={saveStrategy} saving={saving} />}
       <section className="data-card">
         <div>
           <span className="panel-kicker">MARKET DATA</span>

@@ -315,6 +315,20 @@ button:disabled {
   padding: 10px 12px;
   background: rgba(65, 116, 126, 0.1);
 }
+.editor-change-summary {
+  grid-column: 1 / -1;
+  padding: 14px 16px;
+  border-left: 3px solid #d97842;
+  background: rgba(217, 120, 66, 0.08);
+}
+.editor-change-summary h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+.editor-change-summary p,
+.editor-change-summary ul {
+  margin: 0;
+}
 .editor-validation {
   color: #b54834 !important;
   font-weight: 700;
