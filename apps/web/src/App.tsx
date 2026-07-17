@@ -122,6 +122,21 @@ function isMultiAsset(strategy: Strategy) {
   return isRegimeSwitch(strategy) || isAllocationRebalance(strategy);
 }
 
+function strategyEditIssue(strategy: Strategy): string | null {
+  if (strategy.period.start_date > strategy.period.end_date)
+    return "시작일은 종료일보다 늦을 수 없습니다.";
+  if (!Number.isFinite(strategy.capital.initial_cash) || strategy.capital.initial_cash <= 0)
+    return "초기 자본은 0보다 커야 합니다.";
+  if (!Number.isFinite(strategy.costs.commission_rate) || strategy.costs.commission_rate < 0)
+    return "수수료율은 0 이상이어야 합니다.";
+  if (isAllocationRebalance(strategy)) {
+    const total = strategy.target_allocations.reduce((sum, item) => sum + item.weight, 0);
+    if (!Number.isFinite(total) || total <= 0 || total > 1 + 1e-9)
+      return "목표 비중 합계는 0% 초과, 100% 이하여야 합니다.";
+  }
+  return null;
+}
+
 function multiAssetDataIssue(
   symbols: string[],
   dataBySymbol: Record<string, OHLCVBar[]>,
@@ -993,6 +1008,11 @@ function DraftView({
     }
   }
   async function saveStrategy() {
+    const issue = strategyEditIssue(editedStrategy);
+    if (issue) {
+      setError(issue);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
