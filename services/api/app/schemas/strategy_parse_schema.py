@@ -69,6 +69,7 @@ class DraftBacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     data: list["OHLCVBar"] | None = None
     data_by_symbol: dict[str, Annotated[list["OHLCVBar"], Field(min_length=1)]] | None = None
+    data_sources: list["MarketDataSource"] = Field(default_factory=list)
 
 
-from .backtest_schema import OHLCVBar
+from .backtest_schema import MarketDataSource, OHLCVBar

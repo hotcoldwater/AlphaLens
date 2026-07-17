@@ -335,3 +335,26 @@ def test_draft_requires_confirmation_before_backtest(monkeypatch):
     strategy_runs = client.get(f"/api/v1/strategies/{strategy_id}/backtests")
     assert strategy_runs.status_code == 200
     assert strategy_runs.json()["runs"][0]["backtest_id"] == executed.json()["backtest_id"]
+
+
+def test_draft_backtest_accepts_data_sources_from_provider_fetch(monkeypatch):
+    parsed = StrategyParseResult(strategy=api_strategy())
+    monkeypatch.setattr(strategy_draft_routes.parser_service, "parse", lambda _: parsed)
+
+    draft_response = client.post(
+        "/api/v1/strategy-drafts/parse", json={"raw_input": "삼성전자 SMA 교차 전략"},
+    )
+    draft_id = draft_response.json()["draft_id"]
+    client.post(f"/api/v1/strategy-drafts/{draft_id}/confirm")
+
+    executed = client.post(
+        f"/api/v1/strategy-drafts/{draft_id}/backtest",
+        json={
+            "data": bars(),
+            "data_sources": [{
+                "symbol": "005930", "provider": "PYKRX", "adjustment": "adjusted",
+                "data_version": "sha256:test", "collected_at": "2024-01-01T00:00:00Z",
+            }],
+        },
+    )
+    assert executed.status_code == 200

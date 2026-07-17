@@ -67,6 +67,7 @@ def backtest_confirmed_draft(
             strategy=draft.strategy,
             data=request.data,
             data_by_symbol=request.data_by_symbol,
+            data_sources=request.data_sources,
         ),
         strategy_id=draft.strategy_id,
         strategy_version=draft.strategy_version,
