@@ -50,3 +50,11 @@ def test_fmp_client_reports_rate_limit(monkeypatch):
         FMPClient(api_key="test-key").fetch_daily_ohlcv(
             "AAPL", date(2024, 1, 1), date(2024, 1, 2), adjusted_price=False
         )
+
+
+def test_fmp_client_reports_plan_restriction(monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *_, **__: FakeResponse(402, []))
+    with pytest.raises(FMPClientError, match="not included in the current plan"):
+        FMPClient(api_key="test-key").fetch_daily_ohlcv(
+            "AAPL", date(2024, 1, 1), date(2024, 1, 2), adjusted_price=False
+        )

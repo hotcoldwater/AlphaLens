@@ -47,6 +47,11 @@ class FMPClient:
 
         if response.status_code == 403:
             raise FMPClientError("FMP API key is invalid or does not have access to this endpoint")
+        if response.status_code == 402:
+            raise FMPClientError(
+                "FMP historical daily OHLCV access is not included in the current plan. "
+                "Upgrade the FMP plan for this endpoint or upload an OHLCV CSV file instead."
+            )
         if response.status_code == 429:
             raise FMPClientError("FMP API rate limit exceeded; try again later")
         if response.status_code >= 400:
