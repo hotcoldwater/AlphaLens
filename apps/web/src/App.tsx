@@ -1062,6 +1062,9 @@ function DraftView({
   const [editedStrategy, setEditedStrategy] = useState<Strategy>(draft.strategy);
   const [saving, setSaving] = useState(false);
   const signalSymbols = strategySignalSymbols(draft.strategy);
+  const [signalProviders, setSignalProviders] = useState<Record<string, "YFINANCE" | "PYKRX" | "FMP">>({});
+  const signalProviderFor = (symbol: string) =>
+    signalProviders[symbol] ?? (symbol.startsWith("^") ? "YFINANCE" : provider);
   async function readCsv(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1093,9 +1096,13 @@ function DraftView({
     setError("");
   }
   async function loadMarketData() {
-    const symbols = isMultiAsset(draft.strategy)
-      ? draft.strategy.universe.symbols
-      : [marketSymbol.trim().toUpperCase(), ...signalSymbols];
+    const requests = isMultiAsset(draft.strategy)
+      ? draft.strategy.universe.symbols.map((symbol) => ({ symbol, provider }))
+      : [
+        { symbol: marketSymbol.trim().toUpperCase(), provider },
+        ...signalSymbols.map((symbol) => ({ symbol, provider: signalProviderFor(symbol) })),
+      ];
+    const symbols = requests.map((item) => item.symbol);
     if (symbols.some((symbol) => !symbol)) {
       setError("종목코드를 입력하세요. 예: AAPL, NVDA, 005930");
       return;
@@ -1103,8 +1110,8 @@ function DraftView({
     setLoadingMarketData(true);
     setError("");
     try {
-      const settled = await Promise.allSettled(symbols.map((symbol) => fetchDailyOhlcv({
-        provider, symbol, start_date: draft.strategy.period.start_date,
+      const settled = await Promise.allSettled(requests.map(({ symbol, provider: symbolProvider }) => fetchDailyOhlcv({
+        provider: symbolProvider, symbol, start_date: draft.strategy.period.start_date,
         end_date: draft.strategy.period.end_date, adjusted_price: draft.strategy.data.adjusted_price,
       })));
       const failures = settled.flatMap((result, index) => result.status === "rejected"
@@ -1131,7 +1138,7 @@ function DraftView({
           data_version: item.data_version, collected_at: item.collected_at,
         })));
         setSource(signalResults.length
-          ? `${provider} · ${result.symbol} ${result.data_points}개 · 신호 종목 ${signalResults.map((item) => `${item.symbol} ${item.data_points}개`).join(", ")}`
+          ? `${result.provider} · ${result.symbol} ${result.data_points}개 · 신호 종목 ${signalResults.map((item) => `${item.symbol}(${item.provider}) ${item.data_points}개`).join(", ")}`
           : `${provider} · ${result.symbol} · ${result.data_start_date}~${result.data_end_date} · ${result.data_points}개 캔들 · ${result.adjustment}`);
       }
     } catch (caught) {
@@ -1310,8 +1317,10 @@ function DraftView({
           </p>
           {signalSymbols.length > 0 && (
             <p className="editor-impact">
-              이 전략의 조건은 {signalSymbols.join(", ")} 신호 종목을 사용합니다. "시장 데이터 불러오기"는
-              거래 종목과 함께 신호 종목 데이터도 자동으로 불러오며, CSV로 올릴 경우 아래에서 종목별로 각각 업로드하세요.
+              이 전략의 조건은 {signalSymbols.join(", ")} 신호 종목을 사용합니다. pykrx는 개별 종목만 지원하므로
+              KOSPI(^KS11)·KOSDAQ(^KQ11) 같은 지수는 Yahoo Finance로 조회하세요. 신호 종목별 공급원은 아래에서 선택할 수
+              있습니다. "시장 데이터 불러오기"는 거래 종목과 신호 종목을 함께 불러오며, CSV로 올릴 경우 아래에서 종목별로
+              각각 업로드하세요.
             </p>
           )}
         </div>
@@ -1342,6 +1351,24 @@ function DraftView({
             </button>
           </div>
           {symbolResults.length > 0 && <div className="symbol-results">{symbolResults.map((result) => <button key={result.symbol} type="button" onClick={() => { setMarketSymbol(result.symbol); setSymbolResults([]); }}><strong>{result.symbol}</strong> {result.name}</button>)}</div>}
+          {signalSymbols.length > 0 && (
+            <div className="fmp-loader">
+              {signalSymbols.map((symbol) => (
+                <label key={symbol}>
+                  신호 종목 {symbol} 공급원
+                  <select
+                    aria-label={`${symbol} 공급원`}
+                    value={signalProviderFor(symbol)}
+                    onChange={(event) => setSignalProviders({ ...signalProviders, [symbol]: event.target.value as "YFINANCE" | "PYKRX" | "FMP" })}
+                  >
+                    <option value="YFINANCE">Yahoo Finance (지수·미국·ETF)</option>
+                    <option value="PYKRX">pykrx (한국 개별 종목)</option>
+                    <option value="FMP">FMP (선택)</option>
+                  </select>
+                </label>
+              ))}
+            </div>
+          )}
           {isMultiAsset(draft.strategy)
             ? draft.strategy.universe.symbols.map((symbol) => <label className="file-button" key={symbol}>{symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>)
             : <>
