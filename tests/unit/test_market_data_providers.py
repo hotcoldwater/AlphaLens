@@ -73,6 +73,23 @@ def test_yfinance_client_rejects_incomplete_history_data(monkeypatch):
         YFinanceClient().fetch_daily_ohlcv("TSLA", date(2024, 1, 2), date(2024, 1, 2), True)
 
 
+def test_yfinance_client_explains_empty_data_availability_risks(monkeypatch):
+    module = ModuleType("yfinance")
+
+    class Ticker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kwargs):
+            return pd.DataFrame()
+
+    module.Ticker = Ticker
+    monkeypatch.setitem(sys.modules, "yfinance", module)
+
+    with pytest.raises(YFinanceClientError, match="delisted, halted, or unavailable"):
+        YFinanceClient().fetch_daily_ohlcv("MISSING", date(2024, 1, 2), date(2024, 1, 2), True)
+
+
 def test_pykrx_client_normalizes_download(monkeypatch):
     module = ModuleType("pykrx")
 

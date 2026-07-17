@@ -61,7 +61,10 @@ class YFinanceClient:
             raise YFinanceClientError("Yahoo Finance request failed") from error
 
         if not isinstance(data, pd.DataFrame) or data.empty:
-            raise YFinanceClientError(f"Yahoo Finance returned no daily data for {symbol.upper()}")
+            raise YFinanceClientError(
+                f"Yahoo Finance returned no daily data for {symbol.upper()}. "
+                "Check the ticker and requested period; the security may be delisted, halted, or unavailable."
+            )
         required = {"Open", "High", "Low", "Close", "Volume"}
         if not required.issubset(data.columns):
             raise YFinanceClientError("Yahoo Finance response does not contain complete daily OHLCV data")
@@ -73,7 +76,10 @@ class YFinanceClient:
         data.index.name = "date"
         data = data.loc[(data.index.date >= start_date) & (data.index.date <= end_date)]
         if data.empty:
-            raise YFinanceClientError("Yahoo Finance returned no market data within the requested date range")
+            raise YFinanceClientError(
+                "Yahoo Finance returned no market data within the requested date range. "
+                "The security may not have been listed or tradable during that period."
+            )
 
         adjustment = (
             "Yahoo Finance auto-adjusted daily OHLCV"

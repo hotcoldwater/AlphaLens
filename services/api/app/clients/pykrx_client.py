@@ -58,7 +58,10 @@ class PykrxClient:
             raise PykrxClientError("pykrx request failed") from error
 
         if data is None or data.empty:
-            raise PykrxClientError(f"pykrx returned no daily data for {symbol.strip()}")
+            raise PykrxClientError(
+                f"pykrx returned no daily data for {symbol.strip()}. "
+                "Check the six-digit KRX ticker and requested period; the security may be delisted, halted, or unavailable."
+            )
         required = {"시가", "고가", "저가", "종가", "거래량"}
         if not required.issubset(data.columns):
             raise PykrxClientError("pykrx response does not contain complete daily OHLCV data")
@@ -70,7 +73,10 @@ class PykrxClient:
         data.index.name = "date"
         data = data.loc[(data.index.date >= start_date) & (data.index.date <= end_date)]
         if data.empty:
-            raise PykrxClientError("pykrx returned no market data within the requested date range")
+            raise PykrxClientError(
+                "pykrx returned no market data within the requested date range. "
+                "The security may not have been listed or tradable during that period."
+            )
 
         adjustment = (
             "pykrx adjusted daily OHLCV"

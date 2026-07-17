@@ -927,7 +927,7 @@ function DraftView({
           symbol: result.symbol, provider: result.provider, adjustment: result.adjustment,
           data_version: result.data_version, collected_at: result.collected_at,
         })));
-        setSource(`${provider} · ${results.map((result) => `${result.symbol} ${result.data_points}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
+        setSource(`${provider} · ${results.map((result) => `${result.symbol} ${result.data_points}개 (${result.data_start_date}~${result.data_end_date})`).join(" / ")} · 공통 거래일에 맞춰 실행`);
       } else {
         const [result] = results;
         setData(result.data);
@@ -935,7 +935,7 @@ function DraftView({
           symbol: result.symbol, provider: result.provider, adjustment: result.adjustment,
           data_version: result.data_version, collected_at: result.collected_at,
         }]);
-        setSource(`${provider} · ${result.symbol} · ${result.data_points}개 캔들 · ${result.adjustment}`);
+        setSource(`${provider} · ${result.symbol} · ${result.data_start_date}~${result.data_end_date} · ${result.data_points}개 캔들 · ${result.adjustment}`);
       }
     } catch (caught) {
       setError(
