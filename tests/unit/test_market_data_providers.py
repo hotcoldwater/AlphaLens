@@ -28,19 +28,22 @@ def sample_data() -> pd.DataFrame:
 def test_yfinance_client_normalizes_download(monkeypatch):
     module = ModuleType("yfinance")
 
-    def download(symbol, **kwargs):
-        assert symbol == "NVDA"
-        assert kwargs["auto_adjust"] is True
-        assert kwargs["end"] == "2024-01-04"
-        return pd.DataFrame(
-            {
-                "Open": [100.0, 101.0], "High": [102.0, 103.0],
-                "Low": [99.0, 100.0], "Close": [101.0, 102.0], "Volume": [1000, 1100],
-            },
-            index=pd.to_datetime(["2024-01-02", "2024-01-03"]),
-        )
+    class Ticker:
+        def __init__(self, symbol):
+            assert symbol == "NVDA"
 
-    module.download = download
+        def history(self, **kwargs):
+            assert kwargs["auto_adjust"] is True
+            assert kwargs["end"] == "2024-01-04"
+            return pd.DataFrame(
+                {
+                    "Open": [100.0, 101.0], "High": [102.0, 103.0],
+                    "Low": [99.0, 100.0], "Close": [101.0, 102.0], "Volume": [1000, 1100],
+                },
+                index=pd.to_datetime(["2024-01-02", "2024-01-03"]),
+            )
+
+    module.Ticker = Ticker
     monkeypatch.setitem(sys.modules, "yfinance", module)
 
     data, adjustment = YFinanceClient().fetch_daily_ohlcv(
@@ -52,50 +55,21 @@ def test_yfinance_client_normalizes_download(monkeypatch):
     assert adjustment == "Yahoo Finance auto-adjusted daily OHLCV"
 
 
-def test_yfinance_client_flattens_single_ticker_multiindex_columns(monkeypatch):
+def test_yfinance_client_rejects_incomplete_history_data(monkeypatch):
     module = ModuleType("yfinance")
 
-    def download(*args, **kwargs):
-        return pd.DataFrame(
-            [[100.0, 102.0, 99.0, 101.0, 1000]],
-            columns=pd.MultiIndex.from_tuples([
-                ("Open", "TSLA"), ("High", "TSLA"), ("Low", "TSLA"),
-                ("Close", "TSLA"), ("Volume", "TSLA"),
-            ]),
-            index=pd.to_datetime(["2024-01-02"]),
-        )
+    class Ticker:
+        def __init__(self, symbol):
+            pass
 
-    module.download = download
+        def history(self, **kwargs):
+            return pd.DataFrame({"Close": [101.0]}, index=pd.to_datetime(["2024-01-02"]))
+
+    module.Ticker = Ticker
     monkeypatch.setitem(sys.modules, "yfinance", module)
 
-    data, _ = YFinanceClient().fetch_daily_ohlcv(
-        "TSLA", date(2024, 1, 2), date(2024, 1, 2), True
-    )
-
-    assert data.loc["2024-01-02", "close"] == 101
-
-
-def test_yfinance_client_flattens_ticker_first_multiindex_columns(monkeypatch):
-    module = ModuleType("yfinance")
-
-    def download(*args, **kwargs):
-        return pd.DataFrame(
-            [[100.0, 102.0, 99.0, 101.0, 1000]],
-            columns=pd.MultiIndex.from_tuples([
-                ("GLD", "Open"), ("GLD", "High"), ("GLD", "Low"),
-                ("GLD", "Close"), ("GLD", "Volume"),
-            ]),
-            index=pd.to_datetime(["2024-01-02"]),
-        )
-
-    module.download = download
-    monkeypatch.setitem(sys.modules, "yfinance", module)
-
-    data, _ = YFinanceClient().fetch_daily_ohlcv(
-        "GLD", date(2024, 1, 2), date(2024, 1, 2), True
-    )
-
-    assert data.loc["2024-01-02", "close"] == 101
+    with pytest.raises(YFinanceClientError, match="complete daily OHLCV"):
+        YFinanceClient().fetch_daily_ohlcv("TSLA", date(2024, 1, 2), date(2024, 1, 2), True)
 
 
 def test_pykrx_client_normalizes_download(monkeypatch):
