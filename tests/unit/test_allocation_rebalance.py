@@ -60,3 +60,12 @@ def test_allocation_schema_allows_cash_residual_but_rejects_overallocation():
     payload["target_allocations"][1]["weight"] = 0.5
     with pytest.raises(ValidationError, match="sum to 1 or less"):
         AllocationRebalanceStrategy.model_validate(payload)
+
+
+def test_allocation_rebalance_reports_common_date_shortage_with_symbol_counts():
+    spy = frame([100, 101, 102])
+    gld = frame([50, 51, 52])
+    gld.index = pd.to_datetime(["2024-02-02", "2024-02-03", "2024-02-04"])
+
+    with pytest.raises(ValueError, match=r"found 1; supplied data points — SPY: 3개, GLD: 3개"):
+        run_allocation_rebalance_backtest({"SPY": spy, "GLD": gld}, allocation_strategy())

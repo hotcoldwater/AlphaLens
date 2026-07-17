@@ -74,3 +74,12 @@ def test_regime_switch_rejects_target_outside_universe():
 
     with pytest.raises(ValidationError, match="target_symbol"):
         RegimeSwitchStrategy.model_validate(payload)
+
+
+def test_regime_switch_reports_common_date_shortage_with_symbol_counts():
+    spy = frame([100, 101])
+    gld = frame([50, 51])
+    gld.index = pd.to_datetime(["2024-01-03", "2024-01-06"])
+
+    with pytest.raises(ValueError, match=r"found 1; supplied data points — SPY: 2개, GLD: 2개"):
+        run_regime_switch_backtest({"SPY": spy, "GLD": gld}, regime_strategy())

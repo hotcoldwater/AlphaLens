@@ -155,5 +155,9 @@ def _align_data(
     assert common_index is not None
     common_index = common_index.sort_values()
     if len(common_index) < 2:
-        raise ValueError("ALLOCATION_REBALANCE requires at least two common trading dates")
+        counts = ", ".join(f"{symbol}: {len(normalized[symbol])}개" for symbol in strategy.universe.symbols)
+        raise ValueError(
+            "ALLOCATION_REBALANCE requires at least two common trading dates "
+            f"(found {len(common_index)}; supplied data points — {counts})"
+        )
     return {symbol: normalized[symbol].loc[common_index] for symbol in strategy.universe.symbols}

@@ -121,6 +121,20 @@ function isMultiAsset(strategy: Strategy) {
   return isRegimeSwitch(strategy) || isAllocationRebalance(strategy);
 }
 
+function multiAssetDataIssue(
+  symbols: string[],
+  dataBySymbol: Record<string, OHLCVBar[]>,
+): string | null {
+  const missing = symbols.filter((symbol) => !dataBySymbol[symbol.toUpperCase()]?.length);
+  if (missing.length) return `실행 전에 ${missing.join(", ")}의 가격 데이터를 불러오거나 CSV로 업로드하세요.`;
+  const dateSets = symbols.map((symbol) => new Set(dataBySymbol[symbol.toUpperCase()].map((bar) => bar.date)));
+  const commonDates = [...dateSets[0]].filter((date) => dateSets.every((dates) => dates.has(date)));
+  if (commonDates.length < 2) {
+    return "자산 전환·리밸런싱에는 최소 2개의 공통 거래일이 필요합니다. 종목별 기간과 데이터를 확인하세요.";
+  }
+  return null;
+}
+
 function strategyRuleSummary(strategy: Strategy) {
   if (isRegimeSwitch(strategy)) {
     return `${strategy.switch_rule.signal_symbol}: ${conditionLabel(strategy.switch_rule.condition)} → ${strategy.switch_rule.target_symbol}`;
@@ -939,6 +953,13 @@ function DraftView({
     }
   }
   async function submit() {
+    if (isMultiAsset(draft.strategy)) {
+      const issue = multiAssetDataIssue(draft.strategy.universe.symbols, dataBySymbol);
+      if (issue) {
+        setError(issue);
+        return;
+      }
+    }
     setRunning(true);
     setError("");
     try {
