@@ -258,10 +258,23 @@ class TargetAllocation(BaseModel):
 class RebalanceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     frequency: RebalanceFrequency = RebalanceFrequency.MONTHLY
+    weight_tolerance: float = Field(default=0.0, ge=0, lt=1)
+    min_order_lot: int = Field(default=1, ge=1)
+    rebalance_cost: float = Field(default=0.0, ge=0)
+
+
+class ConditionalTargetAllocation(BaseModel):
+    """An alternate target weight set used instead of the base `target_allocations`
+    for any rebalance period whose `condition` evaluates true. Rules are checked in
+    order; the first match wins, and the base set is used when none match."""
+
+    model_config = ConfigDict(extra="forbid")
+    condition: Condition
+    target_allocations: Annotated[list[TargetAllocation], Field(min_length=2, max_length=5)]
 
 
 class AllocationRebalanceStrategy(BaseModel):
-    """Long-only fixed target weights, rebalanced at the first common session of each period."""
+    """Long-only target weights, rebalanced at the first common session of each period."""
 
     model_config = ConfigDict(extra="forbid")
     strategy_type: str = Field(default="ALLOCATION_REBALANCE", pattern="^ALLOCATION_REBALANCE$")
@@ -271,6 +284,7 @@ class AllocationRebalanceStrategy(BaseModel):
     period: Period
     data: DataConfig = DataConfig()
     target_allocations: Annotated[list[TargetAllocation], Field(min_length=2, max_length=5)]
+    conditional_target_allocations: list[ConditionalTargetAllocation] = Field(default_factory=list)
     rebalance: RebalanceConfig = RebalanceConfig()
     execution: ExecutionConfig = ExecutionConfig()
     costs: Costs = Costs()
@@ -280,13 +294,17 @@ class AllocationRebalanceStrategy(BaseModel):
     @model_validator(mode="after")
     def validate_allocations(self) -> "AllocationRebalanceStrategy":
         symbols = set(self.universe.symbols)
-        allocation_symbols = [allocation.symbol for allocation in self.target_allocations]
-        if set(allocation_symbols) != symbols:
-            raise ValueError("target_allocations must contain every universe symbol exactly once")
-        if len(set(allocation_symbols)) != len(allocation_symbols):
-            raise ValueError("target_allocations must not repeat symbols")
-        if sum(allocation.weight for allocation in self.target_allocations) > 1 + 1e-9:
-            raise ValueError("target allocation weights must sum to 1 or less")
+        allocation_sets = [self.target_allocations, *(
+            rule.target_allocations for rule in self.conditional_target_allocations
+        )]
+        for allocation_set in allocation_sets:
+            allocation_symbols = [allocation.symbol for allocation in allocation_set]
+            if set(allocation_symbols) != symbols:
+                raise ValueError("target_allocations must contain every universe symbol exactly once")
+            if len(set(allocation_symbols)) != len(allocation_symbols):
+                raise ValueError("target_allocations must not repeat symbols")
+            if sum(allocation.weight for allocation in allocation_set) > 1 + 1e-9:
+                raise ValueError("target allocation weights must sum to 1 or less")
         return self
 
 

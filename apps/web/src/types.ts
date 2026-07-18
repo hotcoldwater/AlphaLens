@@ -9,9 +9,18 @@ export type Trade = {
   pnl: number;
   return_rate: number;
   holding_days: number;
+  symbol?: string | null;
 };
 
 export type EquityPoint = { date: string; equity: number };
+
+export type SymbolAttribution = {
+  symbol: string;
+  trade_count: number;
+  total_pnl: number;
+  contribution_to_return: number;
+  average_holding_days: number;
+};
 
 export type BacktestResult = {
   backtest_id: string;
@@ -40,6 +49,7 @@ export type BacktestResult = {
   trade_count: number;
   trades: Trade[];
   equity_curve: EquityPoint[];
+  symbol_attribution: SymbolAttribution[];
 };
 
 export type BacktestExplanation = {
@@ -151,7 +161,16 @@ export type AllocationRebalanceStrategy = {
   period: { start_date: string; end_date: string };
   data: { timeframe: string; adjusted_price: boolean };
   target_allocations: { symbol: string; weight: number }[];
-  rebalance: { frequency: "WEEKLY" | "MONTHLY" | "QUARTERLY" };
+  conditional_target_allocations: {
+    condition: Condition;
+    target_allocations: { symbol: string; weight: number }[];
+  }[];
+  rebalance: {
+    frequency: "WEEKLY" | "MONTHLY" | "QUARTERLY";
+    weight_tolerance: number;
+    min_order_lot: number;
+    rebalance_cost: number;
+  };
   execution: { signal_time: string; execution_time: string };
   costs: { commission_rate: number; slippage_rate: number; tax_rate: number };
   capital: { initial_cash: number; currency: string };

@@ -9,6 +9,7 @@ from ..schemas.backtest_schema import (
     BacktestResponse,
     EquityPoint,
     StrategyBacktestListResponse,
+    SymbolAttributionResponse,
     TradeResponse,
 )
 from ..services.backtest_service import execute_backtest
@@ -96,6 +97,16 @@ def _to_response(
         equity_curve=[
             EquityPoint(date=index.date(), equity=float(equity))
             for index, equity in result.result.equity_curve.items()
+        ],
+        symbol_attribution=[
+            SymbolAttributionResponse(
+                symbol=item.symbol,
+                trade_count=item.trade_count,
+                total_pnl=item.total_pnl,
+                contribution_to_return=item.contribution_to_return,
+                average_holding_days=item.average_holding_days,
+            )
+            for item in result.result.symbol_attribution
         ],
     )
     return backtest_store.save(response)

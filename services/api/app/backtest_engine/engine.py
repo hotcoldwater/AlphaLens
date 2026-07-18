@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from math import floor
 
 import pandas as pd
@@ -23,6 +23,15 @@ class Trade:
     symbol: str | None = None
 
 
+@dataclass(frozen=True)
+class SymbolAttribution:
+    symbol: str
+    trade_count: int
+    total_pnl: float
+    contribution_to_return: float
+    average_holding_days: float
+
+
 @dataclass
 class BacktestResult:
     initial_cash: float
@@ -39,6 +48,7 @@ class BacktestResult:
     trade_count: int
     trades: list[Trade]
     equity_curve: pd.Series
+    symbol_attribution: list[SymbolAttribution] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -63,7 +73,26 @@ class BacktestResult:
                 for trade in self.trades
             ],
             "equity_curve": self.equity_curve.to_dict(),
+            "symbol_attribution": [asdict(item) for item in self.symbol_attribution],
         }
+
+
+def compute_symbol_attribution(trades: list[Trade], initial_cash: float) -> list[SymbolAttribution]:
+    """Group a multi-asset trade ledger by symbol to attribute pnl and return contribution."""
+    groups: dict[str, list[Trade]] = {}
+    for trade in trades:
+        groups.setdefault(trade.symbol or "UNKNOWN", []).append(trade)
+    attribution = [
+        SymbolAttribution(
+            symbol=symbol,
+            trade_count=len(group),
+            total_pnl=sum(trade.pnl for trade in group),
+            contribution_to_return=(sum(trade.pnl for trade in group) / initial_cash) if initial_cash else 0.0,
+            average_holding_days=sum(trade.holding_days for trade in group) / len(group),
+        )
+        for symbol, group in groups.items()
+    ]
+    return sorted(attribution, key=lambda item: item.symbol)
 
 
 def run_backtest(

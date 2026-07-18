@@ -108,6 +108,7 @@ def _execute_regime_switch_backtest(request: BacktestRequest) -> BacktestExecuti
 def _execute_allocation_rebalance_backtest(request: BacktestRequest) -> BacktestExecution:
     assert isinstance(request.strategy, AllocationRebalanceStrategy)
     frames = _build_multi_asset_frames(request)
+    _reject_incomplete_symbol_data(frames, request.strategy)
     result = run_allocation_rebalance_backtest(frames, request.strategy)
     version = build_multi_asset_data_version(frames)
     benchmark_symbol = request.strategy.target_allocations[0].symbol
@@ -121,6 +122,34 @@ def _execute_allocation_rebalance_backtest(request: BacktestRequest) -> Backtest
         benchmark_total_return=float(benchmark_curve.iloc[-1] / benchmark_curve.iloc[0] - 1),
         benchmark_max_drawdown=maximum_drawdown(benchmark_curve),
     )
+
+
+_MAX_DATA_GAP_DAYS = 10
+
+
+def _reject_incomplete_symbol_data(
+    frames: dict[str, pd.DataFrame], strategy: AllocationRebalanceStrategy
+) -> None:
+    """Reject execution when a symbol's data stops well before the requested period
+    end (or starts well after its start) instead of silently shrinking the common
+    trading-day intersection in _align_data. This usually indicates delisting, a
+    trading halt, or an incomplete data pull rather than an ordinary holiday gap."""
+    period_start = pd.Timestamp(strategy.period.start_date)
+    period_end = pd.Timestamp(strategy.period.end_date)
+    for symbol in strategy.universe.symbols:
+        frame = frames[symbol]
+        last_date = frame.index.max()
+        first_date = frame.index.min()
+        if (period_end - last_date).days > _MAX_DATA_GAP_DAYS:
+            raise ValueError(
+                f"{symbol} 데이터가 {last_date.date()}에 종료되어 요청 종료일 {strategy.period.end_date}보다 "
+                f"{_MAX_DATA_GAP_DAYS}일 넘게 이릅니다. 상장폐지 또는 거래정지 가능성이 있어 실행을 거절합니다."
+            )
+        if (first_date - period_start).days > _MAX_DATA_GAP_DAYS:
+            raise ValueError(
+                f"{symbol} 데이터가 {first_date.date()}부터 시작되어 요청 시작일 {strategy.period.start_date}보다 "
+                f"{_MAX_DATA_GAP_DAYS}일 넘게 늦습니다. 실행을 거절합니다."
+            )
 
 
 def _build_multi_asset_frames(request: BacktestRequest) -> dict[str, pd.DataFrame]:

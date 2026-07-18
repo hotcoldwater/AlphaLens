@@ -39,6 +39,18 @@ Rules:
 - Rebalance frequency must be one of WEEKLY, MONTHLY, or QUARTERLY. Map "weekly"/"주간"/"매주" to
   WEEKLY, "monthly"/"월간"/"매월" to MONTHLY, and "quarterly"/"분기"/"분기별" to QUARTERLY.
   Default to MONTHLY only when the user does not specify a rebalancing cadence.
+- ALLOCATION_REBALANCE also supports rebalance.weight_tolerance (skip trading a symbol whose
+  weight is already within this fraction of its target, for example "리밸런싱은 5%p 이상 벗어날 때만"
+  → 0.05), rebalance.min_order_lot (round order sizes down to a whole multiple of this many
+  shares), and rebalance.rebalance_cost (a fixed fee charged once per rebalance event that
+  actually trades, distinct from per-trade commission/slippage/tax). Leave these at their
+  defaults (0, 1, 0) unless the user specifies them.
+- ALLOCATION_REBALANCE also supports conditional_target_allocations: a list of
+  {condition, target_allocations} rules checked in order, where the base target_allocations is
+  the fallback when no rule matches. Use this for requests like "지수가 SMA 200 아래로 떨어지면
+  현금 비중을 늘려라" (switch to a more defensive weight set when a condition is true). A
+  condition's IndicatorReference may set `symbol` to any universe symbol; omit `symbol` to mean
+  the first universe symbol.
 - Do not rewrite an unsupported multi-asset, portfolio, or allocation request as a cash or
   single-stock strategy. Instead, return the closest safe draft only when representable and
   clearly add the unsupported intent to warnings and missing_fields.

@@ -122,6 +122,15 @@ class EquityPoint(BaseModel):
     equity: float
 
 
+class SymbolAttributionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    symbol: str
+    trade_count: int
+    total_pnl: float
+    contribution_to_return: float
+    average_holding_days: float
+
+
 class BacktestResponse(BaseModel):
     backtest_id: str
     status: BacktestStatus
@@ -151,6 +160,7 @@ class BacktestResponse(BaseModel):
     trade_count: int
     trades: list[TradeResponse]
     equity_curve: list[EquityPoint]
+    symbol_attribution: list[SymbolAttributionResponse] = Field(default_factory=list)
 
 
 class BacktestRunSummary(BaseModel):

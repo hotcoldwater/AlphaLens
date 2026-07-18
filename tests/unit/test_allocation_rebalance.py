@@ -7,7 +7,11 @@ from services.api.app.schemas.strategy_schema import AllocationRebalanceStrategy
 
 
 def allocation_strategy(
-    frequency: str = "MONTHLY", start_date: str = "2024-01-31", end_date: str = "2024-02-02"
+    frequency: str = "MONTHLY",
+    start_date: str = "2024-01-31",
+    end_date: str = "2024-02-02",
+    rebalance_extra: dict | None = None,
+    conditional_target_allocations: list[dict] | None = None,
 ) -> AllocationRebalanceStrategy:
     return AllocationRebalanceStrategy.model_validate(
         {
@@ -20,7 +24,8 @@ def allocation_strategy(
                 {"symbol": "SPY", "weight": 0.6},
                 {"symbol": "GLD", "weight": 0.4},
             ],
-            "rebalance": {"frequency": frequency},
+            "conditional_target_allocations": conditional_target_allocations or [],
+            "rebalance": {"frequency": frequency, **(rebalance_extra or {})},
             "capital": {"initial_cash": 1000, "currency": "USD"},
         }
     )
@@ -81,6 +86,97 @@ def test_quarterly_rebalance_triggers_on_new_quarter():
     assert result.trades[0].symbol == "SPY"
     assert result.trades[0].exit_date.date().isoformat() == "2024-04-01"
     assert result.final_equity == 1400
+
+
+def test_weight_tolerance_suppresses_rebalancing_within_band():
+    result = run_allocation_rebalance_backtest(
+        {"SPY": frame([100, 200, 200]), "GLD": frame([100, 50, 50])},
+        allocation_strategy(rebalance_extra={"weight_tolerance": 0.9}),
+    )
+
+    assert result.trade_count == 0
+    assert result.final_equity == 1400
+
+
+def test_min_order_lot_rounds_orders_down_and_skips_sub_lot_trades():
+    dates = ["2024-01-31", "2024-02-01"]
+    result = run_allocation_rebalance_backtest(
+        {"SPY": frame([100, 100], dates), "GLD": frame([100, 100], dates)},
+        allocation_strategy(rebalance_extra={"min_order_lot": 10}, end_date="2024-02-01"),
+    )
+
+    # A natural (lot=1) buy would be 6 SPY / 4 GLD shares; rounded down to the
+    # nearest 10 that becomes 0, so nothing is bought at all.
+    assert result.trade_count == 0
+    assert result.final_equity == 1000
+
+
+def test_rebalance_cost_is_charged_once_per_rebalance_event():
+    result = run_allocation_rebalance_backtest(
+        {"SPY": frame([100, 200, 200]), "GLD": frame([100, 50, 50])},
+        allocation_strategy(rebalance_extra={"rebalance_cost": 5}),
+    )
+
+    assert result.total_cost == 5
+    assert result.final_equity == 1395
+
+
+def test_conditional_target_allocation_overrides_base_weights_when_condition_matches():
+    result = run_allocation_rebalance_backtest(
+        {"SPY": frame([100, 200, 200]), "GLD": frame([100, 50, 50])},
+        allocation_strategy(conditional_target_allocations=[{
+            "condition": {
+                "left": {"indicator": "CLOSE"},
+                "operator": "GREATER_THAN_OR_EQUAL",
+                "right": {"value": 150},
+            },
+            "target_allocations": [
+                {"symbol": "SPY", "weight": 0.9},
+                {"symbol": "GLD", "weight": 0.1},
+            ],
+        }]),
+    )
+
+    # On the initial day SPY closes at 100 (condition false) so the base 60/40
+    # weights apply; by the rebalance date SPY closes at 200 (condition true),
+    # so the 90/10 rule fires instead and only GLD needs trimming.
+    assert result.trade_count == 1
+    assert result.trades[0].symbol == "GLD"
+    assert result.trades[0].quantity == 2
+    assert result.final_equity == 1400
+
+
+def test_symbol_attribution_summarizes_trades_per_symbol():
+    result = run_allocation_rebalance_backtest(
+        {"SPY": frame([100, 200, 200]), "GLD": frame([100, 50, 50])},
+        allocation_strategy(),
+    )
+
+    attribution = {item.symbol: item for item in result.symbol_attribution}
+    assert set(attribution) == {"SPY"}
+    assert attribution["SPY"].trade_count == 1
+    assert attribution["SPY"].total_pnl == result.trades[0].pnl
+    assert attribution["SPY"].contribution_to_return == result.trades[0].pnl / 1000
+
+
+def test_conditional_target_allocation_rejects_overallocated_or_mismatched_universe():
+    base = allocation_strategy().model_dump(mode="json")
+    base["conditional_target_allocations"] = [{
+        "condition": {
+            "left": {"indicator": "CLOSE"}, "operator": "GREATER_THAN", "right": {"value": 100},
+        },
+        "target_allocations": [
+            {"symbol": "SPY", "weight": 0.7},
+            {"symbol": "GLD", "weight": 0.5},
+        ],
+    }]
+    with pytest.raises(ValidationError, match="sum to 1 or less"):
+        AllocationRebalanceStrategy.model_validate(base)
+
+    base["conditional_target_allocations"][0]["target_allocations"][1]["weight"] = 0.2
+    base["conditional_target_allocations"][0]["target_allocations"][1]["symbol"] = "QQQ"
+    with pytest.raises(ValidationError, match="every universe symbol"):
+        AllocationRebalanceStrategy.model_validate(base)
 
 
 def test_allocation_schema_allows_cash_residual_but_rejects_overallocation():

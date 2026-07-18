@@ -56,6 +56,50 @@ def regime_switch_strategy() -> dict:
     }
 
 
+def allocation_rebalance_strategy() -> dict:
+    return {
+        "strategy_type": "ALLOCATION_REBALANCE",
+        "strategy_name": "60/40 portfolio",
+        "market": "NASDAQ",
+        "universe": {"type": "ALLOCATION_REBALANCE", "symbols": ["SPY", "GLD"]},
+        "period": {"start_date": "2024-01-31", "end_date": "2024-02-02"},
+        "target_allocations": [
+            {"symbol": "SPY", "weight": 0.6},
+            {"symbol": "GLD", "weight": 0.4},
+        ],
+        "capital": {"initial_cash": 1000, "currency": "USD"},
+    }
+
+
+def allocation_bars(closes: list[float]) -> list[dict]:
+    dates = ["2024-01-31", "2024-02-01", "2024-02-02"]
+    return [
+        {"date": date, "open": close, "high": close + 1, "low": close - 1, "close": close, "volume": 1000}
+        for date, close in zip(dates, closes)
+    ]
+
+
+def test_backtest_endpoint_returns_symbol_attribution_for_allocation_rebalance():
+    response = client.post(
+        "/api/v1/backtests",
+        json={
+            "strategy": allocation_rebalance_strategy(),
+            "data_by_symbol": {
+                "SPY": allocation_bars([100, 200, 200]),
+                "GLD": allocation_bars([100, 50, 50]),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol_attribution"] == [{
+        "symbol": "SPY", "trade_count": 1, "total_pnl": body["trades"][0]["pnl"],
+        "contribution_to_return": body["trades"][0]["pnl"] / 1000,
+        "average_holding_days": body["trades"][0]["holding_days"],
+    }]
+
+
 def test_strategy_validation_endpoint():
     response = client.post("/api/v1/strategies/validate", json=api_strategy())
     assert response.status_code == 200

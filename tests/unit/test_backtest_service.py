@@ -1,5 +1,7 @@
+import pytest
+
 from services.api.app.schemas.backtest_schema import BacktestRequest, OHLCVBar
-from services.api.app.schemas.strategy_schema import Strategy
+from services.api.app.schemas.strategy_schema import AllocationRebalanceStrategy, Strategy
 from services.api.app.services.backtest_service import execute_backtest
 from tests.unit.test_strategy_schema import valid_strategy
 
@@ -60,3 +62,37 @@ def test_backtest_request_rejects_missing_signal_symbol_data():
         assert False, "expected a validation error for missing signal data"
     except Exception as error:
         assert "KOSPI" in str(error)
+
+
+def allocation_strategy_for_service() -> AllocationRebalanceStrategy:
+    return AllocationRebalanceStrategy.model_validate({
+        "strategy_type": "ALLOCATION_REBALANCE",
+        "strategy_name": "60/40 portfolio",
+        "market": "NASDAQ",
+        "universe": {"type": "ALLOCATION_REBALANCE", "symbols": ["SPY", "GLD"]},
+        "period": {"start_date": "2024-01-01", "end_date": "2024-01-31"},
+        "target_allocations": [
+            {"symbol": "SPY", "weight": 0.6},
+            {"symbol": "GLD", "weight": 0.4},
+        ],
+        "capital": {"initial_cash": 1000, "currency": "USD"},
+    })
+
+
+def test_allocation_rebalance_rejects_symbol_data_that_ends_early():
+    strategy = allocation_strategy_for_service()
+    dates = [f"2024-01-{day:02d}" for day in range(1, 32)]
+    # GLD's feed stops on Jan 10, 21 days before the requested period end (Jan 31)
+    # -- far more than an ordinary holiday gap, so this should read as a delisting.
+    gld_dates = [f"2024-01-{day:02d}" for day in range(1, 11)]
+
+    request = BacktestRequest(
+        strategy=strategy,
+        data_by_symbol={
+            "SPY": _bars(dates, [100.0] * len(dates)),
+            "GLD": _bars(gld_dates, [50.0] * len(gld_dates)),
+        },
+    )
+
+    with pytest.raises(ValueError, match="GLD.*상장폐지"):
+        execute_backtest(request)

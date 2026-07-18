@@ -5,8 +5,9 @@ import pandas as pd
 
 from ..enums.strategy_types import RebalanceFrequency
 from ..schemas.strategy_schema import AllocationRebalanceStrategy
-from .engine import BacktestResult, Trade
+from .engine import BacktestResult, Trade, compute_symbol_attribution
 from .metrics import annualized_volatility, sharpe_ratio
+from .signal_generator import evaluate_condition
 
 
 @dataclass
@@ -27,12 +28,43 @@ def _rebalance_period_key(index: pd.Timestamp, frequency: RebalanceFrequency) ->
     return (index.year, index.month)
 
 
+def _resolve_conditional_weights(
+    aligned: dict[str, pd.DataFrame], strategy: AllocationRebalanceStrategy
+) -> list[tuple[pd.Series, dict[str, float]]]:
+    """Pre-evaluate each conditional rule's condition once over the full aligned
+    index. Operands may reference any universe symbol via IndicatorReference.symbol;
+    an operand with no symbol defaults to the first universe symbol."""
+    if not strategy.conditional_target_allocations:
+        return []
+    primary = aligned[strategy.universe.symbols[0]]
+    return [
+        (
+            evaluate_condition(primary, rule.condition, aligned),
+            {item.symbol: item.weight for item in rule.target_allocations},
+        )
+        for rule in strategy.conditional_target_allocations
+    ]
+
+
+def _active_weights(
+    index: pd.Timestamp,
+    conditional_weights: list[tuple[pd.Series, dict[str, float]]],
+    base_weights: dict[str, float],
+) -> dict[str, float]:
+    """First matching conditional rule wins; otherwise fall back to the base weights."""
+    for series, weights in conditional_weights:
+        if bool(series.loc[index]):
+            return weights
+    return base_weights
+
+
 def run_allocation_rebalance_backtest(
     data_by_symbol: dict[str, pd.DataFrame], strategy: AllocationRebalanceStrategy
 ) -> BacktestResult:
-    """Run fixed target weights with first-common-session rebalancing at the configured frequency."""
+    """Run target weights with first-common-session rebalancing at the configured frequency."""
     aligned = _align_data(data_by_symbol, strategy)
-    weights = {item.symbol: item.weight for item in strategy.target_allocations}
+    base_weights = {item.symbol: item.weight for item in strategy.target_allocations}
+    conditional_weights = _resolve_conditional_weights(aligned, strategy)
     holdings = {symbol: Holding() for symbol in strategy.universe.symbols}
     cash = float(strategy.capital.initial_cash)
     initial_cash = cash
@@ -44,6 +76,7 @@ def run_allocation_rebalance_backtest(
     for index in next(iter(aligned.values())).index:
         period = _rebalance_period_key(index, strategy.rebalance.frequency)
         if previous_period is None or period != previous_period:
+            weights = _active_weights(index, conditional_weights, base_weights)
             cash, rebalance_cost, completed = _rebalance(
                 index, aligned, holdings, cash, weights, strategy
             )
@@ -74,6 +107,7 @@ def run_allocation_rebalance_backtest(
         trade_count=len(trades),
         trades=trades,
         equity_curve=equity_curve,
+        symbol_attribution=compute_symbol_attribution(trades, initial_cash),
     )
 
 
@@ -91,13 +125,26 @@ def _rebalance(
     )
     total_cost = 0.0
     completed: list[Trade] = []
+    tolerance = strategy.rebalance.weight_tolerance
+    lot = strategy.rebalance.min_order_lot
+
+    def within_tolerance(symbol: str, raw_open: float, quantity: int) -> bool:
+        # A zero holding has no "current weight" to tolerate a deviation from --
+        # tolerance only ever suppresses trimming/topping-up an existing position,
+        # never the initial purchase that establishes it.
+        if quantity == 0 or open_equity <= 0:
+            return False
+        current_weight = (quantity * raw_open) / open_equity
+        return abs(current_weight - weights[symbol]) <= tolerance
 
     # Sell excess positions first, so every later purchase has settled cash available.
     for symbol, holding in holdings.items():
         raw_open = float(data[symbol].loc[index, "open"])
+        if within_tolerance(symbol, raw_open, holding.quantity):
+            continue
         target_value = open_equity * weights[symbol]
-        current_value = holding.quantity * raw_open
         excess_quantity = max(holding.quantity - floor(target_value / raw_open), 0)
+        excess_quantity = (excess_quantity // lot) * lot
         if not excess_quantity:
             continue
         fill_price = raw_open * (1 - strategy.costs.slippage_rate)
@@ -130,12 +177,15 @@ def _rebalance(
 
     for symbol, holding in holdings.items():
         raw_open = float(data[symbol].loc[index, "open"])
+        if within_tolerance(symbol, raw_open, holding.quantity):
+            continue
         target_value = open_equity * weights[symbol]
         current_value = holding.quantity * raw_open
         deficit_value = max(target_value - current_value, 0.0)
         fill_price = raw_open * (1 + strategy.costs.slippage_rate)
         unit_cost = fill_price * (1 + strategy.costs.commission_rate)
         quantity = min(floor(deficit_value / unit_cost), floor(cash / unit_cost))
+        quantity = (quantity // lot) * lot
         if not quantity:
             continue
         gross = quantity * fill_price
@@ -151,6 +201,11 @@ def _rebalance(
         holding.entry_cost += entry_cost
         if holding.entry_date is None:
             holding.entry_date = index
+
+    if completed and strategy.rebalance.rebalance_cost:
+        cash -= strategy.rebalance.rebalance_cost
+        total_cost += strategy.rebalance.rebalance_cost
+
     return cash, total_cost, completed
 
 

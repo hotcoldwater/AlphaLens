@@ -153,6 +153,13 @@ function strategyEditIssue(strategy: Strategy): string | null {
     const total = strategy.target_allocations.reduce((sum, item) => sum + item.weight, 0);
     if (!Number.isFinite(total) || total <= 0 || total > 1 + 1e-9)
       return "목표 비중 합계는 0% 초과, 100% 이하여야 합니다.";
+    const { weight_tolerance, min_order_lot, rebalance_cost } = strategy.rebalance;
+    if (!Number.isFinite(weight_tolerance) || weight_tolerance < 0 || weight_tolerance >= 1)
+      return "비중 허용 오차는 0% 이상 100% 미만이어야 합니다.";
+    if (!Number.isInteger(min_order_lot) || min_order_lot < 1)
+      return "최소 주문 단위는 1 이상의 정수여야 합니다.";
+    if (!Number.isFinite(rebalance_cost) || rebalance_cost < 0)
+      return "리밸런싱 비용은 0 이상이어야 합니다.";
   }
   if (!isMultiAsset(strategy)) {
     const risk = strategy.risk_management;
@@ -186,6 +193,12 @@ function strategyEditChanges(original: Strategy, next: Strategy): string[] {
     });
     if (original.rebalance.frequency !== next.rebalance.frequency)
       changes.push(`리밸런싱 주기 ${rebalanceFrequencyLabel(original.rebalance.frequency)} → ${rebalanceFrequencyLabel(next.rebalance.frequency)}`);
+    if (original.rebalance.weight_tolerance !== next.rebalance.weight_tolerance)
+      changes.push(`비중 허용 오차 ${(original.rebalance.weight_tolerance * 100).toFixed(0)}% → ${(next.rebalance.weight_tolerance * 100).toFixed(0)}%`);
+    if (original.rebalance.min_order_lot !== next.rebalance.min_order_lot)
+      changes.push(`최소 주문 단위 ${original.rebalance.min_order_lot} → ${next.rebalance.min_order_lot}`);
+    if (original.rebalance.rebalance_cost !== next.rebalance.rebalance_cost)
+      changes.push(`리밸런싱 비용 ${original.rebalance.rebalance_cost} → ${next.rebalance.rebalance_cost}`);
   }
   if (!isMultiAsset(original) && !isMultiAsset(next)) {
     (["stop_loss", "take_profit", "maximum_holding_days"] as const).forEach((key) => {
@@ -378,13 +391,17 @@ function StrategyEditor({ originalStrategy, strategy, onChange, onCancel, onSave
       <div className="strategy-form">{strategy.universe.symbols.map((symbol, index) => <label key={index}>종목 {index + 1}<input value={symbol} onChange={(event) => renameSymbol(index, event.target.value)} /></label>)}</div>
       <div className="strategy-form">{strategy.target_allocations.map((item) => <label key={item.symbol}>{item.symbol} 비중<input type="number" min="0.01" max="1" step="0.01" value={item.weight} onChange={(event) => updateWeight(item.symbol, Number(event.target.value))} /></label>)}</div>
       <div className="strategy-form">
-        <label>리밸런싱 주기<select value={strategy.rebalance.frequency} onChange={(event) => onChange({ ...strategy, rebalance: { frequency: event.target.value as "WEEKLY" | "MONTHLY" | "QUARTERLY" } })}>
+        <label>리밸런싱 주기<select value={strategy.rebalance.frequency} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, frequency: event.target.value as "WEEKLY" | "MONTHLY" | "QUARTERLY" } })}>
           <option value="WEEKLY">매주</option>
           <option value="MONTHLY">매월</option>
           <option value="QUARTERLY">매분기</option>
         </select></label>
+        <label>비중 허용 오차<input type="number" min="0" max="0.99" step="0.01" value={strategy.rebalance.weight_tolerance} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, weight_tolerance: Number(event.target.value) } })} /></label>
+        <label>최소 주문 단위(주)<input type="number" min="1" step="1" value={strategy.rebalance.min_order_lot} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, min_order_lot: Number(event.target.value) } })} /></label>
+        <label>리밸런싱 1회당 비용<input type="number" min="0" step="0.01" value={strategy.rebalance.rebalance_cost} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, rebalance_cost: Number(event.target.value) } })} /></label>
       </div>
       <p>목표 비중 합계 <strong>{((allocationTotal ?? 0) * 100).toFixed(0)}%</strong>{(allocationTotal ?? 0) < 1 ? ` · 나머지 ${((1 - (allocationTotal ?? 0)) * 100).toFixed(0)}%는 현금으로 유지` : ""} · {rebalanceScheduleLabel(strategy.rebalance.frequency)} 첫 공통 거래일 시가에 리밸런싱</p>
+      <p className="editor-impact">비중 허용 오차 이내의 자산은 리밸런싱 대상에서 제외되고, 최소 주문 단위 미만의 주문은 체결되지 않습니다. 조건별 목표 포트폴리오는 아직 이 화면에서 편집할 수 없어 채팅으로 요청해주세요.</p>
     </div> : <div className="switch-editor">
       <h3>매수·매도 및 위험관리</h3>
       <ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} allowSymbol />
@@ -783,6 +800,7 @@ function ResultView({
           <table>
             <thead>
               <tr>
+                {result.trades.some((trade) => trade.symbol) && <th>종목</th>}
                 <th>진입</th>
                 <th>청산</th>
                 <th>수량</th>
@@ -793,7 +811,8 @@ function ResultView({
             </thead>
             <tbody>
               {result.trades.map((trade) => (
-                <tr key={`${trade.entry_date}-${trade.exit_date}`}>
+                <tr key={`${trade.symbol ?? ""}-${trade.entry_date}-${trade.exit_date}`}>
+                  {result.trades.some((item) => item.symbol) && <td>{trade.symbol}</td>}
                   <td>
                     {trade.entry_date}
                     <small>{formatMoney(trade.entry_price, result.currency)}</small>
@@ -818,6 +837,44 @@ function ResultView({
           </table>
         </div>
       </section>
+      {result.symbol_attribution.length > 0 && (
+        <section className="panel trades-panel">
+          <div className="panel-head">
+            <div>
+              <span className="panel-kicker">ATTRIBUTION</span>
+              <h2>자산별 성과 기여도</h2>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>종목</th>
+                  <th>거래 횟수</th>
+                  <th>손익 합계</th>
+                  <th>총수익률 기여도</th>
+                  <th>평균 보유일</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.symbol_attribution.map((item) => (
+                  <tr key={item.symbol}>
+                    <td>{item.symbol}</td>
+                    <td>{item.trade_count}</td>
+                    <td className={item.total_pnl >= 0 ? "positive" : "negative"}>
+                      {formatMoney(item.total_pnl, result.currency)}
+                    </td>
+                    <td className={item.contribution_to_return >= 0 ? "positive" : "negative"}>
+                      {percent.format(item.contribution_to_return)}
+                    </td>
+                    <td>{item.average_holding_days.toFixed(1)}일</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
