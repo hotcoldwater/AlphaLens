@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   cloneStrategyVersion,
   confirmDraft,
@@ -10,7 +10,6 @@ import {
   getStrategyVersions,
   parseStrategy,
   runDraftBacktest,
-  searchMarketSymbols,
   updateDraft,
 } from "./api";
 import type {
@@ -21,9 +20,9 @@ import type {
   Condition,
   EquityPoint,
   IndicatorReference,
-  OHLCVBar,
-  MarketSymbol,
+  MarketDataFetchResult,
   MarketDataSource,
+  OHLCVBar,
   RegimeSwitchStrategy,
   Strategy,
   StrategyDraft,
@@ -49,57 +48,28 @@ function formatMoney(value: number, currency = "KRW") {
       }).format(value);
 }
 
-function makeDemoData(): OHLCVBar[] {
-  const start = new Date("2024-01-02T00:00:00Z");
-  let previous = 70000;
-  return Array.from({ length: 220 }, (_, index) => {
-    const date = new Date(start);
-    date.setUTCDate(start.getUTCDate() + index);
-    const wave = Math.sin(index / 11) * 1300 + Math.sin(index / 29) * 1700;
-    const close = Math.round(70000 + wave + index * 9);
-    const open = Math.round(previous + Math.sin(index * 1.7) * 280);
-    previous = close;
-    return {
-      date: date.toISOString().slice(0, 10),
-      open,
-      high: Math.max(open, close) + 420,
-      low: Math.min(open, close) - 420,
-      close,
-      volume: 800000 + index * 1100,
-    };
-  });
+function defaultProviderFor(strategy: Strategy, symbol: string): "YFINANCE" | "PYKRX" | "FMP" {
+  if (symbol.startsWith("^")) return "YFINANCE";
+  return strategy.market === "KRX" ? "PYKRX" : "YFINANCE";
 }
 
-function parseCsv(text: string): OHLCVBar[] {
-  const [header, ...rows] = text.trim().split(/\r?\n/);
-  const columns = header.split(",").map((value) => value.trim().toLowerCase());
-  const required = ["date", "open", "high", "low", "close", "volume"];
-  if (required.some((name) => !columns.includes(name)))
-    throw new Error(
-      "CSV 헤더는 date, open, high, low, close, volume 순서를 포함해야 합니다.",
-    );
-  const indexes = Object.fromEntries(
-    required.map((name) => [name, columns.indexOf(name)]),
-  );
-  const data = rows.filter(Boolean).map((row, rowIndex) => {
-    const values = row.split(",").map((value) => value.trim());
-    const bar = Object.fromEntries(
-      required.map((name) => [
-        name,
-        name === "date" ? values[indexes[name]] : Number(values[indexes[name]]),
-      ]),
-    ) as unknown as OHLCVBar;
-    if (
-      !bar.date ||
-      required
-        .slice(1)
-        .some((name) => !Number.isFinite(bar[name as keyof OHLCVBar] as number))
-    )
-      throw new Error(`${rowIndex + 2}번째 행의 값을 확인하세요.`);
-    return bar;
+async function fetchOhlcvBatch(
+  strategy: Strategy,
+  symbols: string[],
+): Promise<MarketDataFetchResult[]> {
+  const requests = symbols.map((symbol) => ({ symbol, provider: defaultProviderFor(strategy, symbol) }));
+  const settled = await Promise.allSettled(requests.map(({ symbol, provider }) => fetchDailyOhlcv({
+    provider, symbol, start_date: strategy.period.start_date,
+    end_date: strategy.period.end_date, adjusted_price: strategy.data.adjusted_price,
+  })));
+  const failures = settled.flatMap((result, index) => result.status === "rejected"
+    ? [`${requests[index].symbol}: ${result.reason instanceof Error ? result.reason.message : "조회 실패"}`]
+    : []);
+  if (failures.length) throw new Error(failures.join(" / "));
+  return settled.map((result) => {
+    if (result.status !== "fulfilled") throw new Error("시장 데이터를 불러오지 못했습니다.");
+    return result.value;
   });
-  if (!data.length) throw new Error("CSV에 가격 데이터가 없습니다.");
-  return data;
 }
 
 function operandLabel(operand: Condition["left"]) {
@@ -1090,158 +1060,50 @@ function DraftView({
   onRun: (request: { data?: OHLCVBar[]; data_by_symbol?: Record<string, OHLCVBar[]>; data_sources?: MarketDataSource[] }) => Promise<void>;
   onUpdate: (strategy: Strategy) => Promise<void>;
 }) {
-  const [data, setData] = useState<OHLCVBar[]>(makeDemoData);
-  const [dataBySymbol, setDataBySymbol] = useState<Record<string, OHLCVBar[]>>({});
-  const [dataSources, setDataSources] = useState<MarketDataSource[]>([]);
-  const [source, setSource] = useState("데모 데이터 220일");
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
-  const [marketSymbol, setMarketSymbol] = useState(
-    () => draft.strategy.universe.symbols[0] ?? "",
-  );
-  const [provider, setProvider] = useState<"YFINANCE" | "PYKRX" | "FMP">(
-    () => draft.strategy.market === "KRX" ? "PYKRX" : "YFINANCE",
-  );
-  const [loadingMarketData, setLoadingMarketData] = useState(false);
-  const [searchingSymbols, setSearchingSymbols] = useState(false);
-  const [symbolResults, setSymbolResults] = useState<MarketSymbol[]>([]);
+  const [runningSeconds, setRunningSeconds] = useState(0);
   const [editing, setEditing] = useState(false);
   const [editedStrategy, setEditedStrategy] = useState<Strategy>(draft.strategy);
   const [saving, setSaving] = useState(false);
   const signalSymbols = strategySignalSymbols(draft.strategy);
-  const [signalProviders, setSignalProviders] = useState<Record<string, "YFINANCE" | "PYKRX" | "FMP">>({});
-  const signalProviderFor = (symbol: string) =>
-    signalProviders[symbol] ?? (symbol.startsWith("^") ? "YFINANCE" : provider);
-  async function readCsv(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      return { file, data: parseCsv(await file.text()) };
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "CSV를 읽지 못했습니다.",
-      );
-      return null;
-    }
-  }
-  async function selectCsv(event: ChangeEvent<HTMLInputElement>) {
-    const loaded = await readCsv(event);
-    if (!loaded) return;
-    setData(loaded.data);
-    setDataSources([]);
-    setSource(`${loaded.file.name} · ${loaded.data.length}개 캔들`);
-    setError("");
-  }
-  async function selectMultiAssetCsv(symbol: string, event: ChangeEvent<HTMLInputElement>) {
-    const loaded = await readCsv(event);
-    if (!loaded) return;
-    const normalizedSymbol = symbol.toUpperCase();
-    const next = { ...dataBySymbol, [normalizedSymbol]: loaded.data };
-    setDataBySymbol(next);
-    setDataSources([]);
-    setSource(`CSV · ${Object.entries(next).map(([item, bars]) => `${item} ${bars.length}개`).join(" / ")} · 공통 거래일에 맞춰 실행`);
-    setError("");
-  }
-  async function loadMarketData() {
-    const requests = isMultiAsset(draft.strategy)
-      ? draft.strategy.universe.symbols.map((symbol) => ({ symbol, provider }))
-      : [
-        { symbol: marketSymbol.trim().toUpperCase(), provider },
-        ...signalSymbols.map((symbol) => ({ symbol, provider: signalProviderFor(symbol) })),
-      ];
-    const symbols = requests.map((item) => item.symbol);
-    if (symbols.some((symbol) => !symbol)) {
-      setError("종목코드를 입력하세요. 예: AAPL, NVDA, 005930");
-      return;
-    }
-    setLoadingMarketData(true);
-    setError("");
-    try {
-      const settled = await Promise.allSettled(requests.map(({ symbol, provider: symbolProvider }) => fetchDailyOhlcv({
-        provider: symbolProvider, symbol, start_date: draft.strategy.period.start_date,
-        end_date: draft.strategy.period.end_date, adjusted_price: draft.strategy.data.adjusted_price,
-      })));
-      const failures = settled.flatMap((result, index) => result.status === "rejected"
-        ? [`${symbols[index]}: ${result.reason instanceof Error ? result.reason.message : "조회 실패"}`]
-        : []);
-      if (failures.length) throw new Error(failures.join(" / "));
-      const results = settled.map((result) => {
-        if (result.status !== "fulfilled") throw new Error("시장 데이터를 불러오지 못했습니다.");
-        return result.value;
-      });
-      if (isMultiAsset(draft.strategy)) {
-        setDataBySymbol(Object.fromEntries(results.map((result) => [result.symbol, result.data])));
-        setDataSources(results.map((result) => ({
-          symbol: result.symbol, provider: result.provider, adjustment: result.adjustment,
-          data_version: result.data_version, collected_at: result.collected_at,
-        })));
-        setSource(`${provider} · ${results.map((result) => `${result.symbol} ${result.data_points}개 (${result.data_start_date}~${result.data_end_date})`).join(" / ")} · 공통 거래일에 맞춰 실행`);
-      } else {
-        const [result, ...signalResults] = results;
-        setData(result.data);
-        setDataBySymbol(Object.fromEntries(signalResults.map((item) => [item.symbol, item.data])));
-        setDataSources(results.map((item) => ({
-          symbol: item.symbol, provider: item.provider, adjustment: item.adjustment,
-          data_version: item.data_version, collected_at: item.collected_at,
-        })));
-        setSource(signalResults.length
-          ? `${result.provider} · ${result.symbol} ${result.data_points}개 · 신호 종목 ${signalResults.map((item) => `${item.symbol}(${item.provider}) ${item.data_points}개`).join(", ")}`
-          : `${provider} · ${result.symbol} · ${result.data_start_date}~${result.data_end_date} · ${result.data_points}개 캔들 · ${result.adjustment}`);
-      }
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "시장 데이터를 불러오지 못했습니다.",
-      );
-    } finally {
-      setLoadingMarketData(false);
-    }
-  }
-  async function searchSymbols() {
-    if (provider === "FMP") {
-      setError("FMP 종목 검색은 지원하지 않습니다. 종목코드를 직접 입력하세요.");
-      return;
-    }
-    const query = marketSymbol.trim();
-    if (!query) {
-      setError("검색할 종목코드 또는 종목명을 입력하세요.");
-      return;
-    }
-    setSearchingSymbols(true);
-    setError("");
-    try {
-      const results = await searchMarketSymbols(provider, query);
-      setSymbolResults(results);
-      if (!results.length) setError("일치하는 종목을 찾지 못했습니다.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "종목을 검색하지 못했습니다.");
-    } finally {
-      setSearchingSymbols(false);
-    }
+  useEffect(() => {
+    if (!running) return;
+    setRunningSeconds(0);
+    const interval = setInterval(() => setRunningSeconds((seconds) => seconds + 1), 1000);
+    return () => clearInterval(interval);
+  }, [running]);
+  function toDataSource(result: MarketDataFetchResult): MarketDataSource {
+    return {
+      symbol: result.symbol, provider: result.provider, adjustment: result.adjustment,
+      data_version: result.data_version, collected_at: result.collected_at,
+    };
   }
   async function submit() {
-    if (isMultiAsset(draft.strategy)) {
-      const issue = multiAssetDataIssue(draft.strategy.universe.symbols, dataBySymbol);
-      if (issue) {
-        setError(issue);
-        return;
-      }
-    } else if (signalSymbols.length) {
-      const missing = signalSymbols.filter((symbol) => !dataBySymbol[symbol]?.length);
-      if (missing.length) {
-        setError(`실행 전에 신호 종목 ${missing.join(", ")}의 가격 데이터를 불러오거나 CSV로 업로드하세요.`);
-        return;
-      }
-    }
     setRunning(true);
     setError("");
     try {
-      await onRun(isMultiAsset(draft.strategy)
-        ? { data_by_symbol: dataBySymbol, data_sources: dataSources }
-        : signalSymbols.length
-          ? { data, data_by_symbol: dataBySymbol, data_sources: dataSources }
-          : { data, data_sources: dataSources });
+      if (isMultiAsset(draft.strategy)) {
+        const results = await fetchOhlcvBatch(draft.strategy, draft.strategy.universe.symbols);
+        const dataBySymbol = Object.fromEntries(results.map((result) => [result.symbol, result.data]));
+        const issue = multiAssetDataIssue(draft.strategy.universe.symbols, dataBySymbol);
+        if (issue) {
+          setError(issue);
+          setRunning(false);
+          return;
+        }
+        await onRun({ data_by_symbol: dataBySymbol, data_sources: results.map(toDataSource) });
+      } else {
+        const results = await fetchOhlcvBatch(draft.strategy, [draft.strategy.universe.symbols[0], ...signalSymbols]);
+        const [primary, ...signalResults] = results;
+        await onRun({
+          data: primary.data,
+          data_by_symbol: signalResults.length
+            ? Object.fromEntries(signalResults.map((result) => [result.symbol, result.data]))
+            : undefined,
+          data_sources: results.map(toDataSource),
+        });
+      }
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -1347,72 +1209,6 @@ function DraftView({
         </aside>
       </section>
       {editing && <StrategyEditor originalStrategy={draft.strategy} strategy={editedStrategy} onChange={setEditedStrategy} onCancel={cancelEdit} onSave={saveStrategy} saving={saving} />}
-      <section className="data-card">
-        <div>
-          <span className="panel-kicker">MARKET DATA</span>
-          <h2>가격 데이터 선택</h2>
-          <p>
-            <strong>{source}</strong>
-          </p>
-          {signalSymbols.length > 0 && (
-            <p className="editor-impact">
-              신호 종목({signalSymbols.join(", ")})은 지수라면 Yahoo Finance로 조회하세요.
-            </p>
-          )}
-        </div>
-        <div className="data-actions">
-          <div className="fmp-loader">
-            <select aria-label="시장 데이터 공급원" value={provider} onChange={(event) => { setProvider(event.target.value as "YFINANCE" | "PYKRX" | "FMP"); setSymbolResults([]); }}>
-              <option value="YFINANCE">Yahoo Finance (미국·ETF)</option>
-              <option value="PYKRX">pykrx (한국)</option>
-              <option value="FMP">FMP (선택)</option>
-            </select>
-            <input
-              aria-label="시장 종목코드"
-              value={marketSymbol}
-              onChange={(event) => setMarketSymbol(event.target.value)}
-              inputMode={provider === "PYKRX" ? "numeric" : "text"}
-              maxLength={provider === "PYKRX" ? 6 : 32}
-              placeholder={provider === "PYKRX" ? "종목코드 예: 005930" : "종목코드 예: NVDA"}
-            />
-            <button className="fmp-button" onClick={searchSymbols} disabled={searchingSymbols}>
-              {searchingSymbols ? "검색 중..." : "종목 검색"}
-            </button>
-            <button
-              className="fmp-button"
-              onClick={loadMarketData}
-              disabled={loadingMarketData}
-            >
-              {loadingMarketData ? "시장 데이터 조회 중..." : "시장 데이터 불러오기"}
-            </button>
-          </div>
-          {symbolResults.length > 0 && <div className="symbol-results">{symbolResults.map((result) => <button key={result.symbol} type="button" onClick={() => { setMarketSymbol(result.symbol); setSymbolResults([]); }}><strong>{result.symbol}</strong> {result.name}</button>)}</div>}
-          {signalSymbols.length > 0 && (
-            <div className="fmp-loader">
-              {signalSymbols.map((symbol) => (
-                <label key={symbol}>
-                  신호 종목 {symbol} 공급원
-                  <select
-                    aria-label={`${symbol} 공급원`}
-                    value={signalProviderFor(symbol)}
-                    onChange={(event) => setSignalProviders({ ...signalProviders, [symbol]: event.target.value as "YFINANCE" | "PYKRX" | "FMP" })}
-                  >
-                    <option value="YFINANCE">Yahoo Finance (지수·미국·ETF)</option>
-                    <option value="PYKRX">pykrx (한국 개별 종목)</option>
-                    <option value="FMP">FMP (선택)</option>
-                  </select>
-                </label>
-              ))}
-            </div>
-          )}
-          {isMultiAsset(draft.strategy)
-            ? draft.strategy.universe.symbols.map((symbol) => <label className="file-button" key={symbol} title="date,open,high,low,close,volume 헤더 필요">{symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>)
-            : <>
-              <label className="file-button" title="date,open,high,low,close,volume 헤더 필요">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>
-              {signalSymbols.map((symbol) => <label className="file-button" key={symbol}>신호 종목 {symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>)}
-            </>}
-        </div>
-      </section>
       {error && <p className="error workflow-error">{error}</p>}
       {draft.needs_clarification && <p className="error workflow-error">이 초안은 실행 전에 추가 확인이 필요합니다. {draft.missing_fields.join(" · ")}</p>}
       <button
@@ -1421,12 +1217,10 @@ function DraftView({
         disabled={running || editing || draft.needs_clarification}
       >
         {running
-          ? "전략 확정 및 실행 중..."
+          ? <><span className="spinner" aria-hidden="true" />가격 데이터 조회 및 실행 중... {runningSeconds}초</>
           : editing
             ? "수정을 저장한 뒤 실행하세요"
-            : isMultiAsset(draft.strategy)
-              ? `${Object.values(dataBySymbol).reduce((count, bars) => count + bars.length, 0)}개 종목별 캔들로 자산 전환 실행`
-              : `${data.length}개 캔들로 전략 확정 및 실행`}
+            : "전략 확정 및 실행"}
       </button>
     </main>
   );

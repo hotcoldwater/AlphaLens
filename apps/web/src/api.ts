@@ -4,7 +4,6 @@ import type {
   BacktestRunSummary,
   MarketDataFetchResult,
   MarketDataSource,
-  MarketSymbol,
   OHLCVBar,
   Strategy,
   StrategyDraft,
@@ -88,14 +87,6 @@ export function fetchDailyOhlcv(requestBody: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
   });
-}
-
-export function searchMarketSymbols(
-  provider: "YFINANCE" | "PYKRX",
-  query: string,
-): Promise<MarketSymbol[]> {
-  const params = new URLSearchParams({ provider, query });
-  return request(`/api/v1/market-data/symbols/search?${params.toString()}`);
 }
 
 export function explainBacktest(
