@@ -358,7 +358,6 @@ function StrategyEditor({ originalStrategy, strategy, onChange, onCancel, onSave
     <div>
       <span className="panel-kicker">EDIT STRATEGY</span>
       <h2>전략 초안 수정</h2>
-      <p>수정 내용은 저장 전에 즉시 검증합니다.</p>
       <p className="editor-live-summary">현재 규칙: {strategyRuleSummary(strategy)}</p>
     </div>
     <div className="strategy-form">
@@ -371,7 +370,6 @@ function StrategyEditor({ originalStrategy, strategy, onChange, onCancel, onSave
       <label>슬리피지율<input type="number" min="0" step="0.0001" value={strategy.costs.slippage_rate} onChange={(event) => updateCost("slippage_rate", Number(event.target.value))} /></label>
       <label>세율<input type="number" min="0" step="0.0001" value={strategy.costs.tax_rate} onChange={(event) => updateCost("tax_rate", Number(event.target.value))} /></label>
     </div>
-    <p className="editor-impact">비용이 높아질수록 모든 매수·매도 체결가와 최종 성과에 불리하게 반영됩니다.</p>
     <div className="editor-change-summary">
       <h3>수정 영향 미리보기</h3>
       {changes.length ? <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul> : <p>아직 변경된 값이 없습니다.</p>}
@@ -396,12 +394,12 @@ function StrategyEditor({ originalStrategy, strategy, onChange, onCancel, onSave
           <option value="MONTHLY">매월</option>
           <option value="QUARTERLY">매분기</option>
         </select></label>
-        <label>비중 허용 오차<input type="number" min="0" max="0.99" step="0.01" value={strategy.rebalance.weight_tolerance} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, weight_tolerance: Number(event.target.value) } })} /></label>
-        <label>최소 주문 단위(주)<input type="number" min="1" step="1" value={strategy.rebalance.min_order_lot} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, min_order_lot: Number(event.target.value) } })} /></label>
-        <label>리밸런싱 1회당 비용<input type="number" min="0" step="0.01" value={strategy.rebalance.rebalance_cost} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, rebalance_cost: Number(event.target.value) } })} /></label>
+        <label title="이 오차 이내면 리밸런싱하지 않습니다">비중 허용 오차<input type="number" min="0" max="0.99" step="0.01" value={strategy.rebalance.weight_tolerance} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, weight_tolerance: Number(event.target.value) } })} /></label>
+        <label title="주문 수량을 이 단위의 배수로 내림합니다">최소 주문 단위(주)<input type="number" min="1" step="1" value={strategy.rebalance.min_order_lot} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, min_order_lot: Number(event.target.value) } })} /></label>
+        <label title="리밸런싱이 실제로 발생한 회차에만 부과됩니다">리밸런싱 1회당 비용<input type="number" min="0" step="0.01" value={strategy.rebalance.rebalance_cost} onChange={(event) => onChange({ ...strategy, rebalance: { ...strategy.rebalance, rebalance_cost: Number(event.target.value) } })} /></label>
       </div>
       <p>목표 비중 합계 <strong>{((allocationTotal ?? 0) * 100).toFixed(0)}%</strong>{(allocationTotal ?? 0) < 1 ? ` · 나머지 ${((1 - (allocationTotal ?? 0)) * 100).toFixed(0)}%는 현금으로 유지` : ""} · {rebalanceScheduleLabel(strategy.rebalance.frequency)} 첫 공통 거래일 시가에 리밸런싱</p>
-      <p className="editor-impact">비중 허용 오차 이내의 자산은 리밸런싱 대상에서 제외되고, 최소 주문 단위 미만의 주문은 체결되지 않습니다. 조건별 목표 포트폴리오는 아직 이 화면에서 편집할 수 없어 채팅으로 요청해주세요.</p>
+      <p className="editor-impact">조건별 목표 포트폴리오는 채팅으로 요청해주세요.</p>
     </div> : <div className="switch-editor">
       <h3>매수·매도 및 위험관리</h3>
       <ConditionFields condition={strategy.entry_rules.conditions[0]} onChange={(condition) => setCondition(condition, "entry")} allowSymbol />
@@ -610,10 +608,6 @@ function ResultView({
             <br />
             시간의 궤적.
           </h1>
-          <p className="hero-copy">
-            확정된 규칙으로 계산된 결과입니다. AI 해석과 수익률 계산은 분리되어
-            있습니다.
-          </p>
         </div>
         <div className="run-stamp">
           <span>RUN STATUS</span>
@@ -955,10 +949,6 @@ function LibraryView({
           <br />
           다시 꺼내봅니다.
         </h1>
-        <p>
-          확정된 전략과 버전 이력만 보관합니다. 버전을 복제해 수정·확정하면 같은
-          전략의 다음 버전으로 저장하고 결과를 비교할 수 있습니다.
-        </p>
       </section>
       {loading ? (
         <p>전략 보관함을 불러오는 중입니다.</p>
@@ -1299,10 +1289,6 @@ function DraftView({
           <br />
           실행합니다.
         </h1>
-        <p>
-          AI가 만든 초안은 백테스트 전에 반드시 확인합니다. 계산은 확정된 구조화
-          규칙만 사용합니다.
-        </p>
       </section>
       <section className="draft-grid">
         <article className="paper-card strategy-card">
@@ -1367,17 +1353,10 @@ function DraftView({
           <h2>가격 데이터 선택</h2>
           <p>
             <strong>{source}</strong>
-            <br />
-            개인용 기본 공급원은 미국 주식·ETF의 Yahoo Finance와 한국 주식·ETF의
-            pykrx입니다. FMP는 선택 공급원입니다. CSV는
-            `date,open,high,low,close,volume` 헤더가 필요합니다.
           </p>
           {signalSymbols.length > 0 && (
             <p className="editor-impact">
-              이 전략의 조건은 {signalSymbols.join(", ")} 신호 종목을 사용합니다. pykrx는 개별 종목만 지원하므로
-              KOSPI(^KS11)·KOSDAQ(^KQ11) 같은 지수는 Yahoo Finance로 조회하세요. 신호 종목별 공급원은 아래에서 선택할 수
-              있습니다. "시장 데이터 불러오기"는 거래 종목과 신호 종목을 함께 불러오며, CSV로 올릴 경우 아래에서 종목별로
-              각각 업로드하세요.
+              신호 종목({signalSymbols.join(", ")})은 지수라면 Yahoo Finance로 조회하세요.
             </p>
           )}
         </div>
@@ -1427,9 +1406,9 @@ function DraftView({
             </div>
           )}
           {isMultiAsset(draft.strategy)
-            ? draft.strategy.universe.symbols.map((symbol) => <label className="file-button" key={symbol}>{symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>)
+            ? draft.strategy.universe.symbols.map((symbol) => <label className="file-button" key={symbol} title="date,open,high,low,close,volume 헤더 필요">{symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>)
             : <>
-              <label className="file-button">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>
+              <label className="file-button" title="date,open,high,low,close,volume 헤더 필요">CSV 선택<input type="file" accept=".csv,text/csv" onChange={selectCsv} /></label>
               {signalSymbols.map((symbol) => <label className="file-button" key={symbol}>신호 종목 {symbol} CSV<input type="file" accept=".csv,text/csv" onChange={(event) => selectMultiAssetCsv(symbol, event)} /></label>)}
             </>}
         </div>
@@ -1558,10 +1537,6 @@ export default function App() {
           <br />
           전략으로.
         </h1>
-        <p>
-          자연어로 투자 규칙을 입력하면 AI가 제한된 전략 스키마로 정리합니다.
-          실제 수익률 계산은 규칙 기반 엔진이 담당합니다.
-        </p>
         <form onSubmit={createDraft}>
           <label htmlFor="strategy-input">STRATEGY IDEA</label>
           <textarea
