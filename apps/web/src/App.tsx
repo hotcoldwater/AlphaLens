@@ -224,7 +224,10 @@ function ConditionFields({
   allowSymbol?: boolean;
 }) {
   const updateIndicator = (side: "left" | "right", indicator: string) => {
-    const operand = { type: "INDICATOR" as const, indicator, period: indicator === "SMA" || indicator === "EMA" || indicator === "RSI" ? 20 : null };
+    const period = ["SMA", "EMA", "RSI"].includes(indicator) ? 20
+      : ["N_WEEK_HIGH", "N_WEEK_LOW"].includes(indicator) ? 52
+      : null;
+    const operand = { type: "INDICATOR" as const, indicator, period };
     onChange({ ...condition, [side]: operand });
   };
   const updatePeriod = (side: "left" | "right", value: number) => {
@@ -253,11 +256,18 @@ function ConditionFields({
           <option value="SMA">SMA</option>
           <option value="EMA">EMA</option>
           <option value="RSI">RSI</option>
+          <option value="DAY_OF_WEEK">요일(0=월~4=금)</option>
+          <option value="MONTH_OF_YEAR">월(1~12)</option>
+          <option value="CONSECUTIVE_UP_DAYS">연속 상승일수</option>
+          <option value="CONSECUTIVE_DOWN_DAYS">연속 하락일수</option>
+          <option value="GAP_RETURN">갭 수익률</option>
+          <option value="N_WEEK_HIGH">N주 신고가</option>
+          <option value="N_WEEK_LOW">N주 신저가</option>
           {side === "right" && <option value="VALUE">고정값</option>}
         </select>
         {operand.type === "VALUE" ? (
           <input type="number" value={operand.value} onChange={(event) => onChange({ ...condition, [side]: { type: "VALUE", value: Number(event.target.value) } })} />
-        ) : ["SMA", "EMA", "RSI"].includes(operand.indicator) ? (
+        ) : ["SMA", "EMA", "RSI", "N_WEEK_HIGH", "N_WEEK_LOW"].includes(operand.indicator) ? (
           <input type="number" min="1" value={operand.period ?? 20} onChange={(event) => updatePeriod(side, Number(event.target.value))} />
         ) : null}
         {allowSymbol && operand.type === "INDICATOR" && (

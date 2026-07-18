@@ -108,4 +108,34 @@ def _indicator_series(data: pd.DataFrame, reference: IndicatorReference) -> pd.S
         return data["low"].astype(float).rolling(reference.period, min_periods=reference.period).min()
     if indicator == IndicatorType.VOLUME_SMA:
         return sma(data["volume"].astype(float), reference.period)
+    if indicator == IndicatorType.DAY_OF_WEEK:
+        # Monday=0 .. Friday=4, to match Python's / pandas' own convention.
+        return pd.Series(data.index.dayofweek, index=data.index, dtype=float)
+    if indicator == IndicatorType.MONTH_OF_YEAR:
+        return pd.Series(data.index.month, index=data.index, dtype=float)
+    if indicator == IndicatorType.CONSECUTIVE_UP_DAYS:
+        return _consecutive_streak(data["close"].astype(float), rising=True)
+    if indicator == IndicatorType.CONSECUTIVE_DOWN_DAYS:
+        return _consecutive_streak(data["close"].astype(float), rising=False)
+    if indicator == IndicatorType.GAP_RETURN:
+        previous_close = data["close"].astype(float).shift(1)
+        return data["open"].astype(float) / previous_close - 1
+    if indicator == IndicatorType.N_WEEK_HIGH:
+        window = reference.period * _TRADING_DAYS_PER_WEEK
+        return data["high"].astype(float).rolling(window, min_periods=window).max()
+    if indicator == IndicatorType.N_WEEK_LOW:
+        window = reference.period * _TRADING_DAYS_PER_WEEK
+        return data["low"].astype(float).rolling(window, min_periods=window).min()
     raise ValueError(f"unsupported indicator: {indicator}")
+
+
+_TRADING_DAYS_PER_WEEK = 5
+
+
+def _consecutive_streak(close: pd.Series, rising: bool) -> pd.Series:
+    """Count consecutive days closing higher (rising=True) or lower (rising=False)
+    than the prior close, resetting to 0 on any day that breaks the streak."""
+    change = close.diff()
+    matches = change > 0 if rising else change < 0
+    reset_groups = (~matches).cumsum()
+    return matches.astype(int).groupby(reset_groups).cumsum().astype(float)

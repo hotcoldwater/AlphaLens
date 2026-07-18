@@ -39,6 +39,21 @@ def test_strategy_schema_rejects_indicator_without_period():
         Strategy.model_validate(payload)
 
 
+def test_strategy_schema_rejects_n_week_high_without_period():
+    payload = valid_strategy()
+    payload["entry_rules"]["conditions"][0]["left"] = {"indicator": "N_WEEK_HIGH"}
+    with pytest.raises(ValidationError):
+        Strategy.model_validate(payload)
+
+
+def test_strategy_schema_accepts_calendar_indicators_without_period():
+    payload = valid_strategy()
+    payload["entry_rules"]["conditions"][0]["left"] = {"indicator": "DAY_OF_WEEK"}
+    payload["entry_rules"]["conditions"][0]["right"] = {"value": 0}
+    strategy = Strategy.model_validate(payload)
+    assert strategy.entry_rules.conditions[0].left.period is None
+
+
 def test_indicator_reference_normalizes_symbol_to_uppercase():
     payload = valid_strategy()
     payload["entry_rules"]["conditions"][0]["left"] = {"indicator": "RETURN", "symbol": "kospi"}

@@ -60,6 +60,14 @@ Rules:
   나스닥 or NASDAQ → ^IXIC · S&P500 → ^GSPC · 필라델피아 반도체지수 or SOX → ^SOX ·
   코스피 → ^KS11 · 코스닥 → ^KQ11. These tickers only exist on Yahoo Finance, never on
   pykrx, regardless of the traded stock's market.
+- Calendar and price-pattern indicators are available for conditions that don't need any
+  external data: DAY_OF_WEEK (Monday=0..Friday=4, compare with EQUAL to a VALUE — "월요일"→0,
+  "금요일"→4), MONTH_OF_YEAR (1-12), CONSECUTIVE_UP_DAYS / CONSECUTIVE_DOWN_DAYS (compare with
+  GREATER_THAN_OR_EQUAL to an integer count — "3일 연속 상승"→CONSECUTIVE_UP_DAYS >= 3),
+  GAP_RETURN (today's open vs yesterday's close as a fraction, e.g. -0.05 for a 5% gap down),
+  N_WEEK_HIGH / N_WEEK_LOW (period is in weeks, e.g. 52 for "52주 신고가"). None of these need
+  a `symbol` unless the user is asking about a different asset's calendar/pattern than the
+  traded one.
 - Do not rewrite an unsupported multi-asset, portfolio, or allocation request as a cash or
   single-stock strategy. Instead, return the closest safe draft only when representable and
   clearly add the unsupported intent to warnings and missing_fields.

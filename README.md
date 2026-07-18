@@ -1182,15 +1182,16 @@ GET  /api/v1/market-data/symbols/{symbol}/availability
 
 ### Phase 14. 캘린더·가격패턴 지표 확장
 
-상태: **예정**
+상태: **완료**
 
 목표: "월요일에 사고 금요일에 판다", "3일 연속 하락하면 산다" 같이 새 데이터 없이 기존 OHLCV만으로 계산 가능한 지표를 추가한다.
 
-완료 조건:
+완료 범위:
 
-- `IndicatorType`에 요일(`DAY_OF_WEEK`), 월(`MONTH_OF_YEAR`), 연속 상승·하락일수(`CONSECUTIVE_UP_DAYS`/`CONSECUTIVE_DOWN_DAYS`), 갭 비율(`GAP_PERCENT`), N주 신고가·신저가(`N_WEEK_HIGH`/`N_WEEK_LOW`) 추가
-- `signal_generator.py`의 지표 계산 로직 확장과 회귀 테스트
-- AI 파서가 "월요일", "금요일", "3일 연속" 같은 표현을 새 지표로 변환하도록 프롬프트 갱신
+- `IndicatorType`에 요일(`DAY_OF_WEEK`, 월=0~금=4), 월(`MONTH_OF_YEAR`, 1~12), 연속 상승·하락일수(`CONSECUTIVE_UP_DAYS`/`CONSECUTIVE_DOWN_DAYS`), 갭 수익률(`GAP_RETURN`, 당일 시가 대비 전일 종가 비율), N주 신고가·신저가(`N_WEEK_HIGH`/`N_WEEK_LOW`, period는 주 단위이며 내부적으로 5거래일/주로 환산) 추가
+- `signal_generator.py`에 지표 계산 로직 구현, 회귀 테스트 9개 추가
+- 전략 편집 폼의 조건 지표 선택 목록에도 새 지표 추가
+- AI 파서 프롬프트에 "월요일", "3일 연속 상승", "52주 신고가" 같은 표현을 새 지표로 변환하는 지침 추가
 
 ### Phase 15. 수급 데이터 통합 (외국인·기관·개인 순매수)
 

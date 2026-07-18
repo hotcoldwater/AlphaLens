@@ -31,6 +31,7 @@ class IndicatorReference(BaseModel):
             IndicatorType.SMA, IndicatorType.EMA, IndicatorType.RSI,
             IndicatorType.N_DAY_RETURN, IndicatorType.N_DAY_HIGH,
             IndicatorType.N_DAY_LOW, IndicatorType.VOLUME_SMA,
+            IndicatorType.N_WEEK_HIGH, IndicatorType.N_WEEK_LOW,
         }
         if needs_period and self.period is None:
             raise ValueError(f"{self.indicator} requires period")

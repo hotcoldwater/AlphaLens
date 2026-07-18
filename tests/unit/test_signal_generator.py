@@ -79,6 +79,64 @@ def test_condition_with_symbol_reads_from_signal_data_not_primary_data():
     assert fallback.any()
 
 
+def test_day_of_week_and_month_of_year_indicators():
+    from services.api.app.schemas.strategy_schema import Condition
+
+    data = sample_ohlcv()  # 2024-01-01 (Monday) through 2024-01-12
+    monday = Condition.model_validate(
+        {"left": {"indicator": "DAY_OF_WEEK"}, "operator": "EQUAL", "right": {"value": 0}}
+    )
+    assert evaluate_condition(data, monday).sum() == 2  # 2024-01-01 and 2024-01-08
+
+    january = Condition.model_validate(
+        {"left": {"indicator": "MONTH_OF_YEAR"}, "operator": "EQUAL", "right": {"value": 1}}
+    )
+    assert evaluate_condition(data, january).sum() == len(data)
+
+
+def test_consecutive_up_and_down_day_streaks():
+    from services.api.app.schemas.strategy_schema import Condition
+
+    data = sample_ohlcv()  # close: 100 99 98 99 101 103 102 100 98 99 101 104
+    up_streak = Condition.model_validate(
+        {"left": {"indicator": "CONSECUTIVE_UP_DAYS"}, "operator": "GREATER_THAN_OR_EQUAL", "right": {"value": 3}}
+    )
+    result = evaluate_condition(data, up_streak)
+    assert result.sum() == 2
+    assert result.iloc[5] and result.iloc[11]
+
+    down_streak = Condition.model_validate(
+        {"left": {"indicator": "CONSECUTIVE_DOWN_DAYS"}, "operator": "GREATER_THAN_OR_EQUAL", "right": {"value": 2}}
+    )
+    result = evaluate_condition(data, down_streak)
+    assert result.sum() == 3
+    assert result.iloc[2] and result.iloc[7] and result.iloc[8]
+
+
+def test_gap_return_indicator():
+    from services.api.app.schemas.strategy_schema import Condition
+
+    data = sample_ohlcv()  # open == close - 1 by construction
+    gap_down = Condition.model_validate(
+        {"left": {"indicator": "GAP_RETURN"}, "operator": "LESS_THAN", "right": {"value": 0}}
+    )
+    result = evaluate_condition(data, gap_down)
+    assert result.sum() == 5
+    assert not result.iloc[0]  # no prior close on the first day
+
+
+def test_n_week_high_and_low_use_a_five_trading_day_week():
+    from services.api.app.schemas.strategy_schema import Condition
+
+    data = sample_ohlcv()  # high: 101 100 99 100 102 104 103 101 99 100 102 105
+    condition = Condition.model_validate(
+        {"left": {"indicator": "N_WEEK_HIGH", "period": 1}, "operator": "EQUAL", "right": {"indicator": "HIGH"}}
+    )
+    result = evaluate_condition(data, condition)
+    assert not result.iloc[:4].any()  # fewer than 5 trading days of history
+    assert result.iloc[5]  # 104 is the rolling 5-day high and today's high
+
+
 def test_condition_with_unknown_signal_symbol_raises():
     from services.api.app.schemas.strategy_schema import Condition
 
