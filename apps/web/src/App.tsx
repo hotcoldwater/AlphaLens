@@ -1441,7 +1441,14 @@ export default function App() {
   const [draft, setDraft] = useState<StrategyDraft | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [parsingSeconds, setParsingSeconds] = useState(0);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (!loading) return;
+    setParsingSeconds(0);
+    const interval = setInterval(() => setParsingSeconds((seconds) => seconds + 1), 1000);
+    return () => clearInterval(interval);
+  }, [loading]);
   async function createDraft(event: FormEvent) {
     event.preventDefault();
     if (!rawInput.trim()) return;
@@ -1545,7 +1552,7 @@ export default function App() {
             onChange={(event) => setRawInput(event.target.value)}
           />
           <button className="primary-button" disabled={loading}>
-            {loading ? "전략 해석 중..." : "전략 초안 만들기"}
+            {loading ? <><span className="spinner" aria-hidden="true" />전략 해석 중... {parsingSeconds}초</> : "전략 초안 만들기"}
           </button>
         </form>
         {error && <p className="error">{error}</p>}

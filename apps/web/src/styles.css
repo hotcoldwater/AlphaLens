@@ -135,6 +135,10 @@ button {
 button:not(:disabled):hover { background: #1b3856; }
 button:not(:disabled):active { transform: translateY(1px); }
 .primary-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
   width: 100%;
   min-height: 56px;
   margin-top: 10px;
@@ -142,6 +146,17 @@ button:not(:disabled):active { transform: translateY(1px); }
   box-shadow: 0 10px 20px rgba(10, 31, 51, .16);
   font-family: "Manrope", "Noto Sans KR", sans-serif;
   font-size: 16px;
+}
+.spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255, 255, 255, .35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 .existing-run {
   margin-top: 28px;
