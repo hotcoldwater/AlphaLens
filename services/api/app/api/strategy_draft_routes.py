@@ -13,6 +13,8 @@ from ..services.strategy_parser_service import (
     StrategyParserService,
     requires_external_signal_support,
 )
+from ..services.backtest_failure_store import backtest_failure_store
+from ..services.execution_guard import backtest_execution_guard
 from ..services.strategy_draft_store import strategy_draft_store
 from .backtest_routes import _to_response
 
@@ -62,13 +64,37 @@ def backtest_confirmed_draft(
         )
     if draft.status.value != "CONFIRMED":
         raise HTTPException(status_code=409, detail="strategy must be confirmed before backtest")
-    return _to_response(
-        BacktestRequest(
-            strategy=draft.strategy,
-            data=request.data,
-            data_by_symbol=request.data_by_symbol,
-            data_sources=request.data_sources,
-        ),
-        strategy_id=draft.strategy_id,
-        strategy_version=draft.strategy_version,
-    )
+    if not backtest_execution_guard.acquire(draft_id):
+        raise HTTPException(
+            status_code=409,
+            detail="이 초안에 대한 백테스트가 이미 실행 중입니다. 완료된 뒤 다시 시도하세요.",
+        )
+    try:
+        return _to_response(
+            BacktestRequest(
+                strategy=draft.strategy,
+                data=request.data,
+                data_by_symbol=request.data_by_symbol,
+                data_sources=request.data_sources,
+            ),
+            strategy_id=draft.strategy_id,
+            strategy_version=draft.strategy_version,
+        )
+    except HTTPException as error:
+        backtest_failure_store.record(
+            error_message=str(error.detail),
+            draft_id=draft_id,
+            strategy_id=draft.strategy_id,
+            strategy_version=draft.strategy_version,
+        )
+        raise
+    except Exception as error:
+        backtest_failure_store.record(
+            error_message=str(error),
+            draft_id=draft_id,
+            strategy_id=draft.strategy_id,
+            strategy_version=draft.strategy_version,
+        )
+        raise
+    finally:
+        backtest_execution_guard.release(draft_id)

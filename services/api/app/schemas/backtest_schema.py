@@ -185,6 +185,20 @@ class StrategyBacktestListResponse(BaseModel):
     runs: list[BacktestRunSummary]
 
 
+class BacktestFailureResponse(BaseModel):
+    id: str
+    draft_id: str | None = None
+    strategy_id: str | None = None
+    strategy_version: int | None = None
+    error_message: str
+    created_at: str
+
+
+class StrategyFailureListResponse(BaseModel):
+    strategy_id: str
+    failures: list[BacktestFailureResponse]
+
+
 class StrategyValidationResponse(BaseModel):
     valid: bool
     errors: list[dict] = Field(default_factory=list)

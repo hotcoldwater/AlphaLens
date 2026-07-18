@@ -4,8 +4,13 @@ from fastapi import APIRouter
 from pydantic import ValidationError
 
 from ..schemas.strategy_schema import validate_strategy_definition
-from ..schemas.backtest_schema import StrategyValidationResponse
-from ..schemas.backtest_schema import StrategyBacktestListResponse
+from ..schemas.backtest_schema import (
+    BacktestFailureResponse,
+    StrategyBacktestListResponse,
+    StrategyFailureListResponse,
+    StrategyValidationResponse,
+)
+from ..services.backtest_failure_store import backtest_failure_store
 from ..services.backtest_store import backtest_store
 from ..schemas.strategy_parse_schema import (
     StrategyDraftResponse,
@@ -43,6 +48,16 @@ def clone_strategy_version(strategy_id: str, version: int) -> StrategyDraftRespo
 @router.get("/{strategy_id}/backtests", response_model=StrategyBacktestListResponse)
 def get_strategy_backtests(strategy_id: str) -> StrategyBacktestListResponse:
     return backtest_store.list_for_strategy(strategy_id)
+
+
+@router.get("/{strategy_id}/failures", response_model=StrategyFailureListResponse)
+def get_strategy_failures(strategy_id: str) -> StrategyFailureListResponse:
+    return StrategyFailureListResponse(
+        strategy_id=strategy_id,
+        failures=[
+            BacktestFailureResponse(**row) for row in backtest_failure_store.list_for_strategy(strategy_id)
+        ],
+    )
 
 
 @router.get("/{strategy_id}/versions", response_model=StrategyVersionListResponse)

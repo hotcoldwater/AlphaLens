@@ -216,6 +216,27 @@ def test_api_returns_standard_validation_errors():
     assert response.json()["details"]
 
 
+def test_api_standardizes_unexpected_non_value_errors(monkeypatch):
+    # Starlette's ServerErrorMiddleware re-raises after building the response so
+    # TestClient can surface bugs during testing; raise_server_exceptions=False
+    # here asserts what a real client actually receives over the wire.
+    def boom(request):
+        raise KeyError("simulated engine bug")
+
+    monkeypatch.setattr(backtest_routes, "execute_backtest", boom)
+    non_raising_client = TestClient(app, raise_server_exceptions=False)
+    response = non_raising_client.post("/api/v1/backtests", json={"strategy": api_strategy(), "data": bars()})
+
+    assert response.status_code == 500
+    assert response.json()["code"] == "INTERNAL_ERROR"
+    assert response.json()["message"] == "unexpected server error"
+
+
+def test_api_responses_include_a_request_id_header():
+    response = client.get("/health")
+    assert response.headers["x-request-id"]
+
+
 def test_api_allows_local_web_client_cors_preflight():
     response = client.options(
         "/api/v1/backtests/example",
@@ -379,6 +400,52 @@ def test_draft_requires_confirmation_before_backtest(monkeypatch):
     strategy_runs = client.get(f"/api/v1/strategies/{strategy_id}/backtests")
     assert strategy_runs.status_code == 200
     assert strategy_runs.json()["runs"][0]["backtest_id"] == executed.json()["backtest_id"]
+
+
+def _confirmed_draft_id(monkeypatch) -> str:
+    parsed = StrategyParseResult(strategy=api_strategy())
+    monkeypatch.setattr(strategy_draft_routes.parser_service, "parse", lambda _: parsed)
+    draft_response = client.post(
+        "/api/v1/strategy-drafts/parse", json={"raw_input": "삼성전자 SMA 교차 전략"},
+    )
+    draft_id = draft_response.json()["draft_id"]
+    client.post(f"/api/v1/strategy-drafts/{draft_id}/confirm")
+    return draft_id
+
+
+def test_draft_backtest_rejects_concurrent_duplicate_execution(monkeypatch):
+    from services.api.app.services.execution_guard import backtest_execution_guard
+
+    draft_id = _confirmed_draft_id(monkeypatch)
+    assert backtest_execution_guard.acquire(draft_id)
+    try:
+        response = client.post(f"/api/v1/strategy-drafts/{draft_id}/backtest", json={"data": bars()})
+        assert response.status_code == 409
+        assert "이미 실행 중" in response.json()["message"]
+    finally:
+        backtest_execution_guard.release(draft_id)
+
+    # The guard is released after a failed/duplicate attempt, so a real request
+    # immediately afterwards succeeds rather than being permanently locked out.
+    retry = client.post(f"/api/v1/strategy-drafts/{draft_id}/backtest", json={"data": bars()})
+    assert retry.status_code == 200
+
+
+def test_failed_backtest_execution_is_recorded_and_listed(monkeypatch):
+    draft_id = _confirmed_draft_id(monkeypatch)
+    strategy_id = client.get(f"/api/v1/strategy-drafts/{draft_id}").json()["strategy_id"]
+
+    def boom(request):
+        raise ValueError("no market data exists within strategy period")
+
+    monkeypatch.setattr(backtest_routes, "execute_backtest", boom)
+    failed = client.post(f"/api/v1/strategy-drafts/{draft_id}/backtest", json={"data": bars()})
+    assert failed.status_code == 400
+
+    failures = client.get(f"/api/v1/strategies/{strategy_id}/failures")
+    assert failures.status_code == 200
+    assert failures.json()["failures"][0]["error_message"] == "no market data exists within strategy period"
+    assert failures.json()["failures"][0]["draft_id"] == draft_id
 
 
 def test_draft_backtest_accepts_data_sources_from_provider_fetch(monkeypatch):

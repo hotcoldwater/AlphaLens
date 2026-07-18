@@ -97,8 +97,19 @@ def _schema_statements() -> tuple[str, ...]:
             created_at TEXT NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS backtest_failures (
+            id TEXT PRIMARY KEY,
+            draft_id TEXT,
+            strategy_id TEXT,
+            strategy_version INTEGER,
+            error_message TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
         "CREATE INDEX IF NOT EXISTS strategy_versions_confirmed_at_idx ON strategy_versions (confirmed_at DESC)",
         "CREATE INDEX IF NOT EXISTS backtest_runs_strategy_created_at_idx ON backtest_runs (strategy_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS backtest_failures_strategy_created_at_idx ON backtest_failures (strategy_id, created_at DESC)",
     )
 
 
