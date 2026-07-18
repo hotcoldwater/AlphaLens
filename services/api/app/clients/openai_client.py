@@ -79,7 +79,7 @@ class OpenAIStrategyClient:
         configured_api_key = api_key if api_key is not None else os.getenv("OPENAI_API_KEY")
         # Environment-variable UIs can accidentally retain a trailing newline.
         self.api_key = configured_api_key.strip() if configured_api_key else None
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5.6")
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5.6-terra")
         self._client: OpenAI | None = None
 
     def parse_strategy(self, raw_input: str) -> StrategyParseResult:

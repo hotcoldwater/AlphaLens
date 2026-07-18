@@ -10,7 +10,7 @@ services:
       - key: ALPHALENS_ALLOWED_ORIGINS
         value: https://alphalens-cds.pages.dev
       - key: OPENAI_MODEL
-        value: gpt-5.6
+        value: gpt-5.6-terra
       - key: OPENAI_API_KEY
         sync: false
       - key: FMP_API_KEY
