@@ -1081,7 +1081,7 @@ GET  /api/v1/market-data/symbols/{symbol}/availability
 
 ### Phase 8. 영속성 및 운영 검증
 
-상태: **진행 중**
+상태: **완료**
 
 목표: 배포 환경에서도 전략 이력과 실행 결과가 안정적으로 보존되는지 검증한다.
 
@@ -1090,12 +1090,9 @@ GET  /api/v1/market-data/symbols/{symbol}/availability
 - Render API와 Neon PostgreSQL 연결
 - `strategy_drafts`, `strategy_versions`, `backtest_runs` 테이블 자동 생성
 - `/health`에서 현재 데이터베이스 백엔드 확인
-
-다음 완료 조건:
-
-- Cloudflare Pages에서 생성한 전략 초안, 확정 버전, 실행 결과가 Neon에 실제 저장되는 E2E 검증 **완료**
-- SQLite 개발 데이터의 선택적 내보내기/가져오기 도구
-- Alembic 기반 스키마 마이그레이션 체계
+- Cloudflare Pages에서 생성한 전략 초안, 확정 버전, 실행 결과가 Neon에 실제 저장되는 E2E 검증
+- Alembic 기반 스키마 마이그레이션 체계(`alembic.ini`, `migrations/`) 도입. ORM이 없는 구조라 리비전은 수기 raw SQL로 작성하며, 기존 앱 부트스트랩(`initialize_schema`)과 동일하게 `IF NOT EXISTS`를 사용해 이미 운영 중인 DB에 적용해도 안전한 no-op이 되도록 함. 앞으로의 스키마 변경은 이 리비전 체계로 관리
+- `scripts/db_data_tool.py`: 현재 설정된 DB(SQLite 또는 Neon)를 대상으로 `strategy_drafts`/`strategy_versions`/`backtest_runs`를 테이블 단위로 선택해 JSON으로 내보내고(export), 다른 DB로 가져올 수 있는(import) 도구. import는 기존 행과 기본키가 겹치면 건너뛰므로 재실행해도 중복 저장되지 않음
 
 ### Phase 9. 전략 편집 경험
 
