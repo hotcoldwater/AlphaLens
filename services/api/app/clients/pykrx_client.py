@@ -72,6 +72,12 @@ class PykrxClient:
         data.index = pd.to_datetime(data.index, errors="raise")
         data.index.name = "date"
         data = data.loc[(data.index.date >= start_date) & (data.index.date <= end_date)]
+        # Around corporate actions (e.g. a stock split), pykrx sometimes reports a
+        # placeholder row with open/high/low all zero and only close carried
+        # forward, for a session the security didn't actually trade in. These
+        # aren't real trading days, so drop them instead of failing the whole
+        # fetch on an OHLC-positivity check.
+        data = data[data["open"] > 0]
         if data.empty:
             raise PykrxClientError(
                 "pykrx returned no market data within the requested date range. "

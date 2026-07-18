@@ -116,6 +116,29 @@ def test_pykrx_client_normalizes_download(monkeypatch):
     assert adjustment == "pykrx unadjusted daily OHLCV"
 
 
+def test_pykrx_client_drops_zero_price_halt_rows_around_corporate_actions(monkeypatch):
+    module = ModuleType("pykrx")
+
+    class Stock:
+        @staticmethod
+        def get_market_ohlcv_by_date(start, end, ticker, **kwargs):
+            return pd.DataFrame(
+                {
+                    "시가": [70000.0, 0.0, 71000.0], "고가": [71000.0, 0.0, 72000.0],
+                    "저가": [69000.0, 0.0, 70000.0], "종가": [70500.0, 70500.0, 71500.0],
+                    "거래량": [1000, 0, 1100],
+                },
+                index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+            )
+
+    module.stock = Stock
+    monkeypatch.setitem(sys.modules, "pykrx", module)
+
+    data, _ = PykrxClient().fetch_daily_ohlcv("005930", date(2024, 1, 2), date(2024, 1, 4), False)
+
+    assert list(data.index.strftime("%Y-%m-%d")) == ["2024-01-02", "2024-01-04"]
+
+
 @pytest.mark.parametrize(
     ("provider", "client_name", "symbol", "adjustment"),
     [
