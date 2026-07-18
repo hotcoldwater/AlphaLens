@@ -49,8 +49,11 @@ function formatMoney(value: number, currency = "KRW") {
 }
 
 function defaultProviderFor(strategy: Strategy, symbol: string): "YFINANCE" | "PYKRX" | "FMP" {
-  if (symbol.startsWith("^")) return "YFINANCE";
-  return strategy.market === "KRX" ? "PYKRX" : "YFINANCE";
+  // pykrx only understands plain 6-digit KRX tickers; everything else (index
+  // tickers like ^KS11/^VIX, FX/futures like KRW=X/CL=F, or a US ticker like
+  // NVDA) only exists on Yahoo Finance, regardless of the strategy's market.
+  if (/^\d{6}$/.test(symbol)) return strategy.market === "KRX" ? "PYKRX" : "YFINANCE";
+  return "YFINANCE";
 }
 
 async function fetchOhlcvBatch(

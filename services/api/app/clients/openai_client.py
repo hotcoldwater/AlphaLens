@@ -51,6 +51,15 @@ Rules:
   현금 비중을 늘려라" (switch to a more defensive weight set when a condition is true). A
   condition's IndicatorReference may set `symbol` to any universe symbol; omit `symbol` to mean
   the first universe symbol.
+- A single-stock condition's signal symbol is not limited to other stocks or indices --
+  macro series (FX rates, interest rates, commodity futures, volatility) are valid signal
+  symbols too, using their Yahoo Finance ticker via the same IndicatorReference.symbol
+  mechanism. Map common Korean phrases to these tickers:
+  원/달러 환율 or USD/KRW → KRW=X · 미국 10년물 금리 or US 10-year yield → ^TNX ·
+  국제유가 or WTI → CL=F · 국제 금 시세 or gold → GC=F · VIX or 변동성지수 → ^VIX ·
+  나스닥 or NASDAQ → ^IXIC · S&P500 → ^GSPC · 필라델피아 반도체지수 or SOX → ^SOX ·
+  코스피 → ^KS11 · 코스닥 → ^KQ11. These tickers only exist on Yahoo Finance, never on
+  pykrx, regardless of the traded stock's market.
 - Do not rewrite an unsupported multi-asset, portfolio, or allocation request as a cash or
   single-stock strategy. Instead, return the closest safe draft only when representable and
   clearly add the unsupported intent to warnings and missing_fields.

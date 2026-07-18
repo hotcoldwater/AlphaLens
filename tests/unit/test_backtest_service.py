@@ -50,6 +50,41 @@ def test_cross_asset_condition_is_driven_by_signal_symbol_not_traded_symbol():
     assert execution.result.trades[0].symbol == "005930"
 
 
+def test_macro_ticker_signal_symbol_with_special_characters_is_accepted():
+    """FX/futures/rate tickers like KRW=X or ^TNX contain characters ('=', '^')
+    that don't appear in stock/index tickers -- confirm the schema, engine, and
+    data alignment all handle them the same as any other signal symbol."""
+    dates = ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]
+    samsung_closes = [100, 101, 102, 103, 104]
+    fx_closes = [1300, 1290, 1300, 1290, 1300]
+
+    payload = valid_strategy()
+    payload["period"] = {"start_date": "2024-01-01", "end_date": "2024-01-05"}
+    payload["position_sizing"] = {"method": "AVAILABLE_CASH"}
+    payload["entry_rules"] = {
+        "conditions": [
+            {"left": {"indicator": "RETURN", "period": 1, "symbol": "KRW=X"}, "operator": "LESS_THAN", "right": {"value": 0}}
+        ]
+    }
+    payload["exit_rules"] = {
+        "conditions": [
+            {"left": {"indicator": "RETURN", "period": 1, "symbol": "KRW=X"}, "operator": "GREATER_THAN", "right": {"value": 0}}
+        ]
+    }
+    strategy = Strategy.model_validate(payload)
+    assert strategy.signal_symbols() == {"KRW=X"}
+
+    request = BacktestRequest(
+        strategy=strategy,
+        data=_bars(dates, samsung_closes),
+        data_by_symbol={"KRW=X": _bars(dates, fx_closes)},
+    )
+
+    execution = execute_backtest(request)
+
+    assert execution.result.trade_count >= 1
+
+
 def test_backtest_request_rejects_missing_signal_symbol_data():
     payload = valid_strategy()
     payload["entry_rules"]["conditions"][0]["left"] = {"indicator": "RETURN", "period": 1, "symbol": "KOSPI"}
